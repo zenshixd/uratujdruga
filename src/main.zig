@@ -1,11 +1,32 @@
 const std = @import("std");
 const rl = @import("raylib");
+const Assets = @import("assets.zig").Assets;
 const Toolbox = @import("toolbox.zig").Toolbox;
 
 const SCREEN_WIDTH = 800;
 const SCREEN_HEIGHT = 600;
 pub const TILE_SIZE = 32;
 pub const SPRITE_SIZE = 16;
+pub const PLAYER_SPEED = 200;
+pub const ENEMY_SPEED = 50;
+pub const DECELERATION = 0.85;
+pub const GRAVITY = 800;
+pub const JUMP_SPEED = 500;
+
+pub const PLAYER_SIZE_X = 30;
+pub const PLAYER_SIZE_Y = 50;
+pub const HAMMER_SIZE_X = 10;
+pub const HAMMER_SIZE_Y = 200;
+pub const HAMMER_HEAD_RADIUS = 30;
+pub const HAMMER_START_ANGLE = 220;
+pub const HAMMER_SWING_ANGLE = 100;
+pub const ATTACK_DURATION = 0.4;
+pub const DAMAGE_COOLDOWN = 1;
+pub const KNOCKBACK_DISTANCE = 300;
+
+const Facing = enum { left, right };
+
+var assets: Assets = .{};
 
 pub const Tileset = enum {
     buildings,
@@ -72,106 +93,328 @@ const DebugInfo = struct {
     }
 };
 
-pub const PLAYER_SPEED = 200;
-pub const DECELERATION = 0.9;
-pub const GRAVITY = 800;
-pub const JUMP_SPEED = 500;
-pub const PLAYER_SIZE_X = 30;
-pub const PLAYER_SIZE_Y = 50;
-
-pub const Player = struct {
-    rect: rl.Rectangle,
-    velocity: rl.Vector2 = rl.Vector2.init(0, 0),
-    colliding_rects: std.ArrayList(rl.Rectangle),
-    on_ground: bool = false,
-
-    pub fn init(allocator: std.mem.Allocator, start_point: rl.Vector2) Player {
-        return Player{
-            .rect = rl.Rectangle.init(start_point.x, start_point.y, PLAYER_SIZE_X, PLAYER_SIZE_Y),
-            .colliding_rects = std.ArrayList(rl.Rectangle).init(allocator),
-        };
-    }
-
-    pub fn update(self: *Player, state: *GameState) void {
-        self.velocity.y += GRAVITY * rl.getFrameTime();
-
-        if (rl.isKeyDown(rl.KeyboardKey.key_space) and self.on_ground) {
-            self.velocity.y = -JUMP_SPEED;
-        }
-
-        if (rl.isKeyDown(rl.KeyboardKey.key_d)) {
-            self.velocity.x = PLAYER_SPEED;
-        } else if (rl.isKeyDown(rl.KeyboardKey.key_a)) {
-            self.velocity.x = -PLAYER_SPEED;
-        } else {
-            self.velocity.x = self.velocity.x * DECELERATION * rl.getFrameTime();
-        }
-
+const Movable = struct {
+    pub fn applyMovement(rect: *rl.Rectangle, velocity: *rl.Vector2, state: *GameState) void {
         // check for collisions twice: once for X axis and once for Y axis
         // Dont apply velocity immediately - instead check for collisions after only applying velocity on one axis
         // e.g. apply X velocity, check for collisions - apply offset if colliding, apply final X position to rect
         var isXColliding = false;
         var isYColliding = false;
-        self.on_ground = false;
         for (state.map_level.tiles) |tile| {
             if (!tile.is_solid) {
                 continue;
             }
 
-            const newXRect = rl.Rectangle.init(self.getNewXPos(), self.rect.y, self.rect.width, self.rect.height);
+            const newXRect = getNewXRect(rect.*, velocity.*);
             if (newXRect.checkCollision(tile.rect())) {
                 const colliding_rect = newXRect.getCollision(tile.rect());
 
                 isXColliding = true;
-                self.rect.x = newXRect.x + if (tile.rect().x < self.rect.x) colliding_rect.width else -colliding_rect.width;
-                self.velocity.x = 0;
+                rect.x = newXRect.x + if (tile.rect().x < rect.x) colliding_rect.width else -colliding_rect.width;
+                velocity.x = 0;
             }
 
-            const newYRect = rl.Rectangle.init(self.rect.x, self.getNewYPos(), self.rect.width, self.rect.height);
+            const newYRect = getNewYRect(rect.*, velocity.*);
             if (newYRect.checkCollision(tile.rect())) {
                 const colliding_rect = newYRect.getCollision(tile.rect());
 
-                self.rect.y = newYRect.y + if (tile.rect().y < self.rect.y) colliding_rect.height else -colliding_rect.height;
-                self.velocity.y = 0;
+                rect.y = newYRect.y + if (tile.rect().y < rect.y) colliding_rect.height else -colliding_rect.height;
+                velocity.y = 0;
                 isYColliding = true;
-
-                if (tile.rect().y > self.rect.y) {
-                    self.on_ground = true;
-                }
             }
         }
 
         if (!isXColliding) {
-            self.rect.x = self.getNewXPos();
+            rect.x += velocity.x * rl.getFrameTime();
         }
 
         if (!isYColliding) {
-            self.rect.y = self.getNewYPos();
+            rect.y += velocity.y * rl.getFrameTime();
         }
 
-        if (self.rect.x < state.map_level.boundary.x) {
-            self.rect.x = state.map_level.boundary.x;
-        } else if (self.rect.x > state.map_level.boundary.x + state.map_level.boundary.width) {
-            self.rect.x = state.map_level.boundary.x + state.map_level.boundary.width;
+        if (rect.x < state.map_level.boundary.x) {
+            rect.x = state.map_level.boundary.x;
+        } else if (rect.x > state.map_level.boundary.x + state.map_level.boundary.width) {
+            rect.x = state.map_level.boundary.x + state.map_level.boundary.width;
         }
 
-        if (self.rect.y < state.map_level.boundary.y) {
-            self.rect.y = state.map_level.boundary.y;
-        } else if (self.rect.y > state.map_level.boundary.y + state.map_level.boundary.height) {
-            self.rect.y = state.map_level.boundary.y + state.map_level.boundary.height;
+        if (rect.y < state.map_level.boundary.y) {
+            rect.y = state.map_level.boundary.y;
+        } else if (rect.y > state.map_level.boundary.y + state.map_level.boundary.height) {
+            rect.y = state.map_level.boundary.y + state.map_level.boundary.height;
         }
     }
 
-    pub fn getNewXPos(self: Player) f32 {
-        return self.rect.x + self.velocity.x * rl.getFrameTime();
+    pub fn getNewXRect(rect: rl.Rectangle, velocity: rl.Vector2) rl.Rectangle {
+        return rl.Rectangle.init(rect.x + velocity.x * rl.getFrameTime(), rect.y, rect.width, rect.height);
     }
 
-    pub fn getNewYPos(self: Player) f32 {
-        return self.rect.y + self.velocity.y * rl.getFrameTime();
+    pub fn getNewYRect(rect: rl.Rectangle, velocity: rl.Vector2) rl.Rectangle {
+        return rl.Rectangle.init(rect.x, rect.y + velocity.y * rl.getFrameTime(), rect.width, rect.height);
+    }
+};
+
+const Projectile = struct {
+    position: rl.Vector2,
+    radius: f32,
+    velocity: rl.Vector2,
+
+    pub fn update(self: *Projectile) void {
+        self.position.x += self.velocity.x * rl.getFrameTime();
+        self.position.y += self.velocity.y * rl.getFrameTime();
+    }
+
+    pub fn shouldDestroy(self: Projectile, state: *GameState) bool {
+        const boundary = state.map_level.boundary;
+        return self.position.x < boundary.x or self.position.x > boundary.x + boundary.width or self.position.y < boundary.y or self.position.y > boundary.y + boundary.height;
+    }
+
+    pub fn draw(self: *Projectile) void {
+        rl.drawCircleGradient(@intFromFloat(self.position.x), @intFromFloat(self.position.y), self.radius, rl.Color.white, rl.Color.red);
+    }
+};
+
+const Enemy = struct {
+    rect: rl.Rectangle,
+    velocity: rl.Vector2 = rl.Vector2.init(0, 0),
+    facing: Facing = .right,
+    health: f32 = 10,
+    simple_ball_attack_time: f64 = -1,
+    spiral_ball_next_attack_time: f64 = SPIRAL_BALL_ATTACK_COOLDOWN,
+    spiral_ball_attack_end_time: f64 = 0,
+    prev_spiral_ball_time: f64 = 0,
+    last_damage_time: f64 = -DAMAGE_COOLDOWN,
+    projectiles: std.BoundedArray(Projectile, 100) = .{},
+
+    const PROJECTILE_SPEED = 100;
+    const DAMAGE_TAKEN_BLINK_FREQUENCY = 0.05;
+
+    const SIMPLE_BALL_ATTACK_PROJ_COUNT = 12;
+    const SIMPLE_BALL_ATTACK_COOLDOWN = 5;
+
+    const SPIRAL_BALL_ATTACK_COOLDOWN = 5;
+    const SPIRAL_BALL_FREQUENCY = 0.2;
+    const SPIRAL_BALL_DURATION = SPIRAL_BALL_FREQUENCY * 10;
+
+    pub fn init(spawn_point: rl.Vector2) Enemy {
+        return .{
+            .rect = rl.Rectangle.init(spawn_point.x, spawn_point.y, PLAYER_SIZE_X, PLAYER_SIZE_Y),
+        };
+    }
+
+    pub fn isTakingDamageOnCooldown(self: Enemy) bool {
+        return rl.getTime() - self.last_damage_time < DAMAGE_COOLDOWN;
+    }
+
+    pub fn dealDamage(self: *Enemy, source: *Player, damage: f32) void {
+        if (self.isTakingDamageOnCooldown()) {
+            // dealing damage has 1s cooldown
+            return;
+        }
+
+        self.health -= damage;
+        self.last_damage_time = rl.getTime();
+        const knockback_direction = rl.Vector2.init(self.rect.x - source.rect.x, self.rect.y - source.rect.y).normalize();
+        self.velocity = self.velocity.add(knockback_direction.scale(KNOCKBACK_DISTANCE));
+        rl.playSound(assets.bonk_sound);
+    }
+
+    pub fn update(self: *Enemy, state: *GameState) void {
+        if (self.facing == .left) {
+            self.velocity.x = -ENEMY_SPEED;
+        } else {
+            self.velocity.x = ENEMY_SPEED;
+        }
+        self.velocity.y += GRAVITY * rl.getFrameTime();
+
+        Movable.applyMovement(&self.rect, &self.velocity, state);
+        for (self.projectiles.slice(), 0..) |*projectile, i| {
+            projectile.update();
+            if (projectile.shouldDestroy(state)) {
+                std.debug.print("destroying projectile\n", .{});
+                _ = self.projectiles.orderedRemove(i);
+            }
+        }
+
+        const distToLeftEdge = self.rect.x - state.map_level.boundary.x;
+        const distToRightEdge = state.map_level.boundary.x + state.map_level.boundary.width - self.rect.x;
+        if (distToLeftEdge < 10) {
+            self.facing = .right;
+        } else if (distToRightEdge < 10) {
+            self.facing = .left;
+        }
+
+        const time = rl.getTime();
+        if (time - self.simple_ball_attack_time > SIMPLE_BALL_ATTACK_COOLDOWN) {
+            std.debug.print("simple ball\n", .{});
+            self.simple_ball_attack_time = rl.getTime();
+            self.simpleBallAttack();
+        }
+
+        if (time > self.spiral_ball_next_attack_time) {
+            self.spiral_ball_attack_end_time = time + SPIRAL_BALL_DURATION;
+            self.spiral_ball_next_attack_time = time + SPIRAL_BALL_ATTACK_COOLDOWN;
+        }
+
+        if (time < self.spiral_ball_attack_end_time) {
+            std.debug.print("spiral ball\n", .{});
+            self.spiralBallAttack(&state.player);
+        }
+    }
+
+    pub fn simpleBallAttack(self: *Enemy) void {
+        for (0..SIMPLE_BALL_ATTACK_PROJ_COUNT) |i| {
+            const angle = std.math.degreesToRadians(@as(f32, @floatFromInt(360 * i / SIMPLE_BALL_ATTACK_PROJ_COUNT)));
+            const velocity = rl.Vector2.init(1, 0).rotate(angle).scale(PROJECTILE_SPEED);
+            std.debug.print("velocity: {d:.2}, {d:.2}\n", .{ velocity.x, velocity.y });
+            self.projectiles.append(.{
+                .position = rl.Vector2.init(self.rect.x + self.rect.width / 2, self.rect.y + self.rect.height / 2),
+                .radius = 10,
+                .velocity = velocity,
+            }) catch std.debug.print("Failed to append projectile\n", .{});
+        }
+    }
+
+    pub fn spiralBallAttack(self: *Enemy, target: *Player) void {
+        const prev_ball_time_delta = rl.getTime() - self.prev_spiral_ball_time;
+        if (prev_ball_time_delta > SPIRAL_BALL_FREQUENCY) {
+            const attack_time_until_done = self.spiral_ball_attack_end_time - rl.getTime();
+            const angle = std.math.degreesToRadians(45 + -90 * attack_time_until_done / SPIRAL_BALL_DURATION);
+            self.prev_spiral_ball_time = rl.getTime();
+            self.projectiles.append(.{
+                .position = rl.Vector2.init(self.rect.x + self.rect.width / 2, self.rect.y + self.rect.height / 2),
+                .radius = 10,
+                .velocity = rl.Vector2.init(target.rect.x - self.rect.x, target.rect.y - self.rect.y).normalize().rotate(@floatCast(angle)).scale(PROJECTILE_SPEED),
+            }) catch std.debug.print("Failed to append projectile\n", .{});
+        }
+    }
+
+    pub fn draw(self: *Enemy) void {
+        var color = rl.Color.red.fade(self.health / 10);
+        if (self.isTakingDamageOnCooldown()) {
+            color = color.fade(self.health / 10 * self.damageTakenFade());
+        }
+        rl.drawRectangleRec(self.rect, color);
+
+        for (self.projectiles.slice()) |*projectile| {
+            projectile.draw();
+        }
+    }
+
+    pub fn damageTakenFade(self: *Enemy) f32 {
+        const time_delta = rl.getTime() - self.last_damage_time;
+        const rem = @mod(time_delta, DAMAGE_TAKEN_BLINK_FREQUENCY * 2);
+
+        if (rem < DAMAGE_TAKEN_BLINK_FREQUENCY) {
+            return 0.0;
+        } else {
+            return 1.0;
+        }
+    }
+};
+
+const Hammer = struct {
+    rect: rl.Rectangle = rl.Rectangle.init(0, 0, HAMMER_SIZE_X, HAMMER_SIZE_Y),
+    facing: Facing = .right,
+    rotation: f32 = 0,
+    attack_time: f64 = 0,
+
+    pub fn checkCollision(self: Hammer, rect: rl.Rectangle) bool {
+        return rl.checkCollisionCircleRec(self.headPoint(), HAMMER_HEAD_RADIUS, rect);
+    }
+
+    pub fn headPoint(self: Hammer) rl.Vector2 {
+        return rl.Vector2.init(self.rect.x, self.rect.y).add(rl.Vector2.init(0, HAMMER_SIZE_Y).rotate(std.math.degreesToRadians(self.rotation)));
+    }
+
+    pub fn update(self: *Hammer, state: *GameState) void {
+        const player = &state.player;
+        self.rect.x = player.rect.x;
+        self.rect.y = player.rect.y + PLAYER_SIZE_Y / 3;
+        self.facing = player.facing;
+
+        if (self.facing == .left) {
+            self.rect.x += PLAYER_SIZE_X - HAMMER_SIZE_X / 2;
+        } else {
+            self.rect.x += HAMMER_SIZE_X / 2;
+        }
+
+        const attackDelta = rl.getTime() - self.attack_time;
+        self.rotation = @floatCast(HAMMER_START_ANGLE + HAMMER_SWING_ANGLE * attackDelta / ATTACK_DURATION);
+
+        if (self.facing == .left) {
+            self.rotation *= -1;
+        }
+
+        if (attackDelta > ATTACK_DURATION) {
+            self.attack_time = 0;
+        }
+
+        if (self.attack_time > 0 and self.checkCollision(state.enemy.rect)) {
+            state.enemy.dealDamage(&state.player, 1);
+        }
+    }
+
+    pub fn draw(self: *Hammer) void {
+        if (self.attack_time > 0) {
+            // Handle
+            rl.drawRectanglePro(self.rect, rl.Vector2.init(HAMMER_SIZE_X / 2, 0), self.rotation, rl.Color.red);
+            // Head
+            rl.drawCircleV(self.headPoint(), HAMMER_HEAD_RADIUS, rl.Color.red);
+        }
+    }
+};
+
+pub const Player = struct {
+    rect: rl.Rectangle,
+    facing: Facing = .right,
+    hammer: Hammer = .{},
+    jump_time: f64 = -1,
+    velocity: rl.Vector2 = rl.Vector2.init(0, 0),
+
+    pub fn init(start_point: rl.Vector2) Player {
+        return Player{
+            .rect = rl.Rectangle.init(start_point.x, start_point.y, PLAYER_SIZE_X, PLAYER_SIZE_Y),
+        };
+    }
+
+    pub fn update(self: *Player, state: *GameState) void {
+        const jump_time_delta = rl.getTime() - self.jump_time;
+        if (rl.isKeyUp(rl.KeyboardKey.key_space) and jump_time_delta < 0.1) {
+            self.velocity.y *= 0.6;
+        }
+
+        if (rl.isKeyDown(rl.KeyboardKey.key_space) and self.velocity.y == 0) {
+            self.jump_time = rl.getTime();
+            self.velocity.y = -JUMP_SPEED;
+        }
+
+        self.velocity.y += GRAVITY * rl.getFrameTime();
+        if (rl.isKeyDown(rl.KeyboardKey.key_d)) {
+            self.velocity.x = PLAYER_SPEED;
+            self.facing = .right;
+        } else if (rl.isKeyDown(rl.KeyboardKey.key_a)) {
+            self.velocity.x = -PLAYER_SPEED;
+            self.facing = .left;
+        } else {
+            self.velocity.x *= DECELERATION;
+        }
+
+        if (rl.isKeyPressed(rl.KeyboardKey.key_r)) {
+            self.hammer.attack_time = rl.getTime();
+        }
+        Movable.applyMovement(&self.rect, &self.velocity, state);
+        self.hammer.update(state);
     }
 
     pub fn draw(self: *Player) void {
         rl.drawRectangleRec(self.rect, rl.Color.green);
+        if (self.facing == .right) {
+            rl.drawCircleV(rl.Vector2.init(self.rect.x + PLAYER_SIZE_X, self.rect.y + 5), 5, rl.Color.dark_purple);
+        } else {
+            rl.drawCircleV(rl.Vector2.init(self.rect.x, self.rect.y + 5), 5, rl.Color.dark_purple);
+        }
+        self.hammer.draw();
     }
 
     pub fn getCenter(self: Player) rl.Vector2 {
@@ -211,7 +454,8 @@ pub const Tile = struct {
 pub const MapEditor = struct {
     toolbox: Toolbox,
     tiles: std.ArrayList(Tile),
-    start_point: rl.Vector2,
+    player_spawn_point: rl.Vector2,
+    enemy_spawn_point: rl.Vector2,
     boundary: rl.Rectangle,
 
     pub fn init(allocator: std.mem.Allocator, map_level: *const MapLevel) MapEditor {
@@ -220,7 +464,8 @@ pub const MapEditor = struct {
 
         return MapEditor{
             .tiles = tiles,
-            .start_point = map_level.start_point,
+            .player_spawn_point = map_level.player_spawn_point,
+            .enemy_spawn_point = map_level.enemy_spawn_point,
             .boundary = map_level.boundary,
             .toolbox = Toolbox.init(allocator),
         };
@@ -238,9 +483,19 @@ pub const MapEditor = struct {
             }
         }
 
-        rl.drawCircleV(self.start_point.addValue(TILE_SIZE / 2), 10, rl.Color.lime);
+        rl.drawCircleV(self.player_spawn_point.addValue(TILE_SIZE / 2), 10, rl.Color.lime);
+        rl.drawCircleV(self.enemy_spawn_point.addValue(TILE_SIZE / 2), 10, rl.Color.red.brightness(-0.2));
         rl.drawRectangleLinesEx(self.boundary, 3, rl.Color.blue);
         self.toolbox.draw(state);
+    }
+
+    pub fn toMapLevel(self: *MapEditor) MapLevel {
+        return MapLevel{
+            .tiles = self.tiles.items,
+            .boundary = self.boundary,
+            .player_spawn_point = self.player_spawn_point,
+            .enemy_spawn_point = self.enemy_spawn_point,
+        };
     }
 
     pub fn save(self: *MapEditor) !void {
@@ -250,9 +505,10 @@ pub const MapEditor = struct {
         const writer = file.writer();
 
         try std.json.stringify(MapLevel{
-            .start_point = self.start_point,
             .tiles = self.tiles.items,
             .boundary = self.boundary,
+            .player_spawn_point = self.player_spawn_point,
+            .enemy_spawn_point = self.enemy_spawn_point,
         }, .{ .whitespace = .indent_2 }, writer);
     }
 };
@@ -264,7 +520,8 @@ const MapLevel = struct {
         Tile{ .position = rl.Vector2.init(2, 3) },
         Tile{ .position = rl.Vector2.init(3, 3) },
     },
-    start_point: rl.Vector2 = rl.Vector2.init(0, 0),
+    player_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
+    enemy_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
     boundary: rl.Rectangle = rl.Rectangle.init(0, 0, 1000, 1000),
 
     pub fn load(allocator: std.mem.Allocator) !MapLevel {
@@ -301,6 +558,7 @@ pub const GameState = struct {
     allocator: std.mem.Allocator,
     mode: Mode = .play,
     player: Player,
+    enemy: Enemy,
     cam: rl.Camera2D,
     map_level: MapLevel,
     map_editor: MapEditor,
@@ -309,7 +567,7 @@ pub const GameState = struct {
 
     pub fn init(allocator: std.mem.Allocator) GameState {
         const map_level = MapLevel.load(allocator) catch unreachable;
-        const player = Player.init(allocator, map_level.start_point);
+        const player = Player.init(map_level.player_spawn_point);
         var sprite_tiles = std.EnumMap(Tileset, rl.Texture2D){};
 
         inline for (std.meta.fields(Tileset)) |kind| {
@@ -319,6 +577,7 @@ pub const GameState = struct {
         return GameState{
             .allocator = allocator,
             .player = player,
+            .enemy = Enemy.init(map_level.enemy_spawn_point),
             .cam = rl.Camera2D{
                 .target = player.getCenter(),
                 .offset = getScreenCenter(),
@@ -331,6 +590,11 @@ pub const GameState = struct {
         };
     }
 
+    pub fn spawnEntities(self: *GameState) void {
+        self.player = Player.init(self.map_level.player_spawn_point);
+        self.enemy = Enemy.init(self.map_level.enemy_spawn_point);
+    }
+
     pub fn tick(self: *GameState) void {
         if (rl.isKeyPressed(rl.KeyboardKey.key_f1)) {
             self.debug_info.enabled = !self.debug_info.enabled;
@@ -340,14 +604,8 @@ pub const GameState = struct {
             self.mode = if (self.mode == .editor) .play else .editor;
             if (self.mode == .play) {
                 self.map_editor.save() catch unreachable;
-
-                self.map_level.tiles = self.allocator.dupe(Tile, self.map_editor.tiles.items) catch unreachable;
-                self.map_level.start_point = self.map_editor.start_point;
-                self.map_level.boundary = self.map_editor.boundary;
-
-                self.player = Player.init(self.allocator, self.map_level.start_point);
-                self.player.rect.x = self.map_level.start_point.x;
-                self.player.rect.y = self.map_level.start_point.y;
+                self.map_level = self.map_editor.toMapLevel();
+                self.spawnEntities();
             }
         }
 
@@ -355,6 +613,7 @@ pub const GameState = struct {
             self.map_editor.update(self);
         } else {
             self.player.update(self);
+            self.enemy.update(self);
         }
 
         if (self.mode == .play) {
@@ -392,6 +651,7 @@ pub const GameState = struct {
         } else {
             self.map_level.draw(self);
             self.player.draw();
+            self.enemy.draw();
         }
 
         self.debug_info.drawGrid();
@@ -408,6 +668,7 @@ pub const GameState = struct {
 
 pub fn main() anyerror!void {
     rl.initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Save the Druga");
+    rl.initAudioDevice();
     defer rl.closeWindow(); // Close window and OpenGL context
 
     rl.toggleBorderlessWindowed();
@@ -415,6 +676,7 @@ pub fn main() anyerror!void {
 
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
 
+    assets.init();
     var state = GameState.init(std.heap.page_allocator);
 
     // Main game loop
@@ -427,4 +689,5 @@ pub fn main() anyerror!void {
     }
 
     try state.map_editor.save();
+    rl.closeAudioDevice();
 }

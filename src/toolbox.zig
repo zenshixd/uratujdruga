@@ -14,6 +14,7 @@ pub const Toolbox = struct {
         paint,
         make_solid,
         start_point,
+        enemy_point,
         move_boundary,
 
         pub fn getIcon(kind: Kind) rl.Texture2D {
@@ -22,7 +23,7 @@ pub const Toolbox = struct {
                 .erase => "assets/icons/drawing_eraser.png",
                 .paint => "assets/icons/drawing_brush.png",
                 .make_solid => "assets/icons/tool_wand.png",
-                .start_point => "assets/icons/gauntlet_point.png",
+                .start_point, .enemy_point => "assets/icons/gauntlet_point.png",
                 .move_boundary => "assets/icons/resize_d_cross.png",
             };
             return rl.loadTexture(filename);
@@ -89,7 +90,8 @@ pub const Toolbox = struct {
             .erase => self.updateEraseTool(state),
             .paint => self.updatePaintTool(state),
             .make_solid => self.updateMakeSolidTool(state),
-            .start_point => self.updateStartPointTool(state),
+            .start_point => self.updateSpawnPointTool(&state.map_editor.player_spawn_point),
+            .enemy_point => self.updateSpawnPointTool(&state.map_editor.enemy_spawn_point),
             .move_boundary => self.updateMoveBoundaryTool(state),
         }
     }
@@ -124,7 +126,6 @@ pub const Toolbox = struct {
                 map_editor.tiles.items[tile_idx].tileset = self.active_tileset;
                 map_editor.tiles.items[tile_idx].offset = self.active_tile;
             } else {
-                std.debug.print("paint tile\n", .{});
                 map_editor.tiles.append(Tile{ .position = tileVec, .offset = self.active_tile }) catch unreachable;
             }
         }
@@ -170,11 +171,11 @@ pub const Toolbox = struct {
         }
     }
 
-    pub fn updateStartPointTool(_: *Toolbox, state: *GameState) void {
+    pub fn updateSpawnPointTool(_: *Toolbox, out_point: *rl.Vector2) void {
         if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
             const mouse_pos = rl.getMousePosition();
             const tileVec = Tile.toTilePos(mouse_pos);
-            state.map_editor.start_point = rl.Vector2.init(tileVec.x * TILE_SIZE, tileVec.y * TILE_SIZE);
+            out_point.* = rl.Vector2.init(tileVec.x * TILE_SIZE, tileVec.y * TILE_SIZE);
         }
     }
 
@@ -253,6 +254,7 @@ pub const Toolbox = struct {
             if (state.sprite_tiles.get(self.active_tileset)) |texture| {
                 const tilesetPosition = rl.getScreenToWorld2D(rl.Vector2.zero(), state.cam);
                 texture.drawV(tilesetPosition, rl.Color.white);
+
                 rl.drawRectangleLinesEx(
                     rl.Rectangle.init(
                         tilesetPosition.x + self.active_tile.x,
@@ -272,7 +274,12 @@ pub const Toolbox = struct {
                 texture.drawPro(Tileset.sourceRect(self.active_tile), cursorRect, rl.Vector2.zero(), 0, rl.Color.white);
             }
         } else {
-            rl.drawTextureV(self.icon, self.pos, rl.Color.white);
+            const textureColor = switch (self.kind) {
+                .start_point => rl.Color.lime,
+                .enemy_point => rl.Color.red,
+                else => rl.Color.white,
+            };
+            rl.drawTextureV(self.icon, self.pos, textureColor);
         }
     }
 
