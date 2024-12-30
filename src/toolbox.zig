@@ -1,11 +1,12 @@
 const std = @import("std");
 const rl = @import("raylib");
-const Tile = @import("main.zig").Tile;
-const Tileset = @import("main.zig").Tileset;
-const MapEditor = @import("main.zig").MapEditor;
+
+const Assets = @import("assets.zig");
+const Tile = @import("map.zig").Tile;
+const Tileset = @import("map.zig").Tileset;
+const MapEditor = @import("map.zig").MapEditor;
 const GameState = @import("main.zig").GameState;
-const TILE_SIZE = @import("main.zig").TILE_SIZE;
-const SPRITE_SIZE = @import("main.zig").SPRITE_SIZE;
+const stats = @import("stats.zig");
 
 pub const Toolbox = struct {
     const Kind = enum {
@@ -16,42 +17,11 @@ pub const Toolbox = struct {
         start_point,
         enemy_point,
         move_boundary,
-
-        pub fn getIcon(kind: Kind) rl.Texture2D {
-            const filename = switch (kind) {
-                .pointer => "assets/icons/pointer_scifi_a.png",
-                .erase => "assets/icons/drawing_eraser.png",
-                .paint => "assets/icons/drawing_brush.png",
-                .make_solid => "assets/icons/tool_wand.png",
-                .start_point, .enemy_point => "assets/icons/gauntlet_point.png",
-                .move_boundary => "assets/icons/resize_d_cross.png",
-            };
-            return rl.loadTexture(filename);
-        }
-
-        pub fn next(self: Kind) Kind {
-            const fields = std.meta.fields(Kind);
-            if (@intFromEnum(self) == fields.len - 1) {
-                return @enumFromInt(0);
-            }
-
-            return @enumFromInt(@intFromEnum(self) + 1);
-        }
-
-        pub fn prev(self: Kind) Kind {
-            const fields = std.meta.fields(Kind);
-            if (@intFromEnum(self) == 0) {
-                return @enumFromInt(fields.len - 1);
-            }
-
-            return @enumFromInt(@intFromEnum(self) - 1);
-        }
     };
 
     kind: Kind,
-    icon: rl.Texture2D,
     pos: rl.Vector2,
-    active_tileset: Tileset = .tiles,
+    active_tileset: Tileset = .catacombs,
     active_tile: rl.Vector2 = rl.Vector2.init(0, 0),
     display_tileset: bool = true,
     selection: std.AutoHashMap(usize, void),
@@ -60,7 +30,6 @@ pub const Toolbox = struct {
     pub fn init(allocator: std.mem.Allocator) Toolbox {
         return Toolbox{
             .kind = .pointer,
-            .icon = Kind.pointer.getIcon(),
             .selection = std.AutoHashMap(usize, void).init(allocator),
             .pos = rl.Vector2.init(
                 @floatFromInt(@divFloor(rl.getScreenWidth(), 2)),
@@ -69,18 +38,13 @@ pub const Toolbox = struct {
         };
     }
 
-    pub fn load(self: *Toolbox, kind: Kind) void {
-        self.kind = kind;
-        self.icon = kind.getIcon();
-    }
-
     pub fn update(self: *Toolbox, state: *GameState) void {
         if (rl.isKeyPressed(rl.KeyboardKey.key_one)) {
-            self.load(self.kind.prev());
+            self.kind = prevEnumValue(Kind, self.kind);
         }
 
         if (rl.isKeyPressed(rl.KeyboardKey.key_two)) {
-            self.load(self.kind.next());
+            self.kind = nextEnumValue(Kind, self.kind);
         }
 
         self.pos = rl.getMousePosition();
@@ -119,7 +83,7 @@ pub const Toolbox = struct {
     pub fn updatePaintTool(self: *Toolbox, state: *GameState) void {
         var map_editor = &state.map_editor;
         if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_left)) {
-            const mouse_pos = rl.getMousePosition().add(rl.Vector2.init(TILE_SIZE / 2, TILE_SIZE / 2));
+            const mouse_pos = rl.getMousePosition().add(rl.Vector2.init(stats.tile_size / 2, stats.tile_size / 2));
             const tileVec = Tile.toTilePos(mouse_pos);
 
             if (findTileIdx(map_editor, tileVec)) |tile_idx| {
@@ -134,48 +98,42 @@ pub const Toolbox = struct {
             self.display_tileset = !self.display_tileset;
         }
 
-        if (rl.isKeyPressed(rl.KeyboardKey.key_w)) {
-            if (self.active_tile.y > 0) {
-                self.active_tile.y -= SPRITE_SIZE;
-            } else {
-                self.active_tile.y = 0;
-            }
+        if (rl.isKeyPressed(rl.KeyboardKey.key_q)) {
+            self.active_tileset = prevEnumValue(Tileset, self.active_tileset);
         }
 
-        if (rl.isKeyPressed(rl.KeyboardKey.key_s)) {
-            const tileset = state.sprite_tiles.get(self.active_tileset).?;
-            const tilesetHeight: f32 = @floatFromInt(tileset.height - SPRITE_SIZE);
-            if (self.active_tile.y < tilesetHeight) {
-                self.active_tile.y += SPRITE_SIZE;
-            } else {
-                self.active_tile.y = tilesetHeight;
-            }
-        }
-
-        if (rl.isKeyPressed(rl.KeyboardKey.key_d)) {
-            const tileset = state.sprite_tiles.get(self.active_tileset).?;
-            const tilesetWidth: f32 = @floatFromInt(tileset.width - SPRITE_SIZE);
-            if (self.active_tile.x < tilesetWidth) {
-                self.active_tile.x += SPRITE_SIZE;
-            } else {
-                self.active_tile.x = tilesetWidth;
-            }
+        if (rl.isKeyPressed(rl.KeyboardKey.key_e)) {
+            self.active_tileset = nextEnumValue(Tileset, self.active_tileset);
         }
 
         if (rl.isKeyPressed(rl.KeyboardKey.key_a)) {
-            if (self.active_tile.x > 0) {
-                self.active_tile.x -= SPRITE_SIZE;
-            } else {
-                self.active_tile.x = 0;
-            }
+            self.active_tile.x -= stats.sprite_size;
         }
+
+        if (rl.isKeyPressed(rl.KeyboardKey.key_d)) {
+            self.active_tile.x += stats.sprite_size;
+        }
+
+        if (rl.isKeyPressed(rl.KeyboardKey.key_w)) {
+            self.active_tile.y -= stats.sprite_size;
+        }
+
+        if (rl.isKeyPressed(rl.KeyboardKey.key_s)) {
+            self.active_tile.y += stats.sprite_size;
+        }
+
+        const texture = self.active_tileset.getTexture(state.assets);
+        const tilesetWidth: f32 = @floatFromInt(texture.width - stats.sprite_size);
+        const tilesetHeight: f32 = @floatFromInt(texture.height - stats.sprite_size);
+        self.active_tile.x = wrapValue(self.active_tile.x, 0, tilesetWidth);
+        self.active_tile.y = wrapValue(self.active_tile.y, 0, tilesetHeight);
     }
 
     pub fn updateSpawnPointTool(_: *Toolbox, out_point: *rl.Vector2) void {
         if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
             const mouse_pos = rl.getMousePosition();
             const tileVec = Tile.toTilePos(mouse_pos);
-            out_point.* = rl.Vector2.init(tileVec.x * TILE_SIZE, tileVec.y * TILE_SIZE);
+            out_point.* = rl.Vector2.init(tileVec.x * stats.tile_size, tileVec.y * stats.tile_size);
         }
     }
 
@@ -199,13 +157,13 @@ pub const Toolbox = struct {
             }
 
             const mouse_pos = rl.getMousePosition();
-            self.selected_point = if (mouse_pos.distance(rl.Vector2.init(boundary.x, boundary.y)) < TILE_SIZE * 2)
+            self.selected_point = if (mouse_pos.distance(rl.Vector2.init(boundary.x, boundary.y)) < stats.tile_size * 2)
                 .ne
-            else if (mouse_pos.distance(rl.Vector2.init(boundary.x + boundary.width, boundary.y)) < TILE_SIZE * 2)
+            else if (mouse_pos.distance(rl.Vector2.init(boundary.x + boundary.width, boundary.y)) < stats.tile_size * 2)
                 .nw
-            else if (mouse_pos.distance(rl.Vector2.init(boundary.x, boundary.y + boundary.height)) < TILE_SIZE * 2)
+            else if (mouse_pos.distance(rl.Vector2.init(boundary.x, boundary.y + boundary.height)) < stats.tile_size * 2)
                 .se
-            else if (mouse_pos.distance(rl.Vector2.init(boundary.x + boundary.width, boundary.y + boundary.height)) < TILE_SIZE * 2)
+            else if (mouse_pos.distance(rl.Vector2.init(boundary.x + boundary.width, boundary.y + boundary.height)) < stats.tile_size * 2)
                 .sw
             else
                 .none;
@@ -251,36 +209,46 @@ pub const Toolbox = struct {
 
     pub fn draw(self: *Toolbox, state: *GameState) void {
         if (self.display_tileset) {
-            if (state.sprite_tiles.get(self.active_tileset)) |texture| {
-                const tilesetPosition = rl.getScreenToWorld2D(rl.Vector2.zero(), state.cam);
-                texture.drawV(tilesetPosition, rl.Color.white);
+            const texture = self.active_tileset.getTexture(state.assets);
+            const tilesetPosition = rl.getScreenToWorld2D(rl.Vector2.zero(), state.cam);
+            texture.drawV(tilesetPosition, rl.Color.white);
 
-                rl.drawRectangleLinesEx(
-                    rl.Rectangle.init(
-                        tilesetPosition.x + self.active_tile.x,
-                        tilesetPosition.y + self.active_tile.y,
-                        SPRITE_SIZE,
-                        SPRITE_SIZE,
-                    ),
-                    1,
-                    rl.Color.red,
-                );
-            }
+            rl.drawRectangleLinesEx(
+                rl.Rectangle.init(
+                    tilesetPosition.x + self.active_tile.x,
+                    tilesetPosition.y + self.active_tile.y,
+                    stats.sprite_size,
+                    stats.sprite_size,
+                ),
+                1,
+                rl.Color.red,
+            );
         }
 
         if (self.kind == .paint) {
-            if (state.sprite_tiles.get(self.active_tileset)) |texture| {
-                const cursorRect = rl.Rectangle.init(self.pos.x, self.pos.y, TILE_SIZE, TILE_SIZE);
-                texture.drawPro(Tileset.sourceRect(self.active_tile), cursorRect, rl.Vector2.zero(), 0, rl.Color.white);
-            }
+            const texture = self.active_tileset.getTexture(state.assets);
+            const cursorRect = rl.Rectangle.init(self.pos.x, self.pos.y, stats.tile_size, stats.tile_size);
+            texture.drawPro(Tileset.sourceRect(self.active_tile), cursorRect, rl.Vector2.zero(), 0, rl.Color.white);
+            rl.drawRectangleLinesEx(cursorRect, 1, rl.Color.red);
         } else {
             const textureColor = switch (self.kind) {
                 .start_point => rl.Color.lime,
                 .enemy_point => rl.Color.red,
                 else => rl.Color.white,
             };
-            rl.drawTextureV(self.icon, self.pos, textureColor);
+            rl.drawTextureV(self.getCursorIcon(state.assets), self.pos, textureColor);
         }
+    }
+
+    pub fn getCursorIcon(self: Toolbox, assets: Assets) rl.Texture2D {
+        return switch (self.kind) {
+            .pointer => assets.getTexture(.pointer),
+            .erase => assets.getTexture(.erase),
+            .paint => assets.getTexture(.paint),
+            .make_solid => assets.getTexture(.make_solid),
+            .start_point, .enemy_point => assets.getTexture(.spawn_point),
+            .move_boundary => assets.getTexture(.move_boundary),
+        };
     }
 
     pub fn nextTile(self: *Toolbox, state: *GameState) void {
@@ -288,17 +256,15 @@ pub const Toolbox = struct {
         const tilesetWidth: f32 = @floatFromInt(tileset.width);
         const tilesetHeight: f32 = @floatFromInt(tileset.height);
 
-        if (self.active_tile.x >= tilesetWidth and self.active_tile.y >= tilesetHeight - SPRITE_SIZE) {
+        if (self.active_tile.x >= tilesetWidth and self.active_tile.y >= tilesetHeight - stats.sprite_size) {
             self.active_tile.x = 0;
             self.active_tile.y = 0;
         } else if (self.active_tile.x >= tilesetWidth) {
             self.active_tile.x = 0;
-            self.active_tile.y += SPRITE_SIZE;
+            self.active_tile.y += stats.sprite_size;
         } else {
-            self.active_tile.x += SPRITE_SIZE;
+            self.active_tile.x += stats.sprite_size;
         }
-
-        std.debug.print("active_tile: {d}, {d}\n", .{ self.active_tile.x, self.active_tile.y });
     }
 
     pub fn prevTile(self: *Toolbox, state: *GameState) void {
@@ -308,14 +274,40 @@ pub const Toolbox = struct {
 
         if (self.active_tile.y <= 0 and self.active_tile.x <= 0) {
             self.active_tile.x = tilesetWidth;
-            self.active_tile.y = tilesetHeight - SPRITE_SIZE;
+            self.active_tile.y = tilesetHeight - stats.sprite_size;
         } else if (self.active_tile.x <= 0) {
             self.active_tile.x = tilesetWidth;
-            self.active_tile.y -= SPRITE_SIZE;
+            self.active_tile.y -= stats.sprite_size;
         } else {
-            self.active_tile.x -= SPRITE_SIZE;
+            self.active_tile.x -= stats.sprite_size;
         }
-
-        std.debug.print("active_tile: {d}, {d}\n", .{ self.active_tile.x, self.active_tile.y });
     }
 };
+
+pub fn wrapValue(value: anytype, min: anytype, max: anytype) @TypeOf(value) {
+    if (value < min) {
+        return max;
+    } else if (value > max) {
+        return min;
+    }
+
+    return value;
+}
+
+pub fn prevEnumValue(comptime T: type, value: T) T {
+    const fields = std.meta.fields(T);
+    if (@intFromEnum(value) == 0) {
+        return @enumFromInt(fields.len - 1);
+    }
+
+    return @enumFromInt(@intFromEnum(value) - 1);
+}
+
+pub fn nextEnumValue(comptime T: type, value: T) T {
+    const fields = std.meta.fields(T);
+    if (@intFromEnum(value) == fields.len - 1) {
+        return @enumFromInt(0);
+    }
+
+    return @enumFromInt(@intFromEnum(value) + 1);
+}

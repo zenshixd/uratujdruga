@@ -2939,20 +2939,596 @@
         "y": 3.2e1
       },
       "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.4e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 6.4e1,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.3e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 8e1,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.2e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 9.6e1,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.1e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.12e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.28e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.9e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.44e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.9e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.44e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.28e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.1e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.12e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.2e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 9.6e1,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.3e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 8e1,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.4e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 6.4e1,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.4e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 6.4e1,
+        "y": 6.4e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.4e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 6.4e1,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.3e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 8e1,
+        "y": 6.4e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.2e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 8e1,
+        "y": 6.4e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.1e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.9e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.8e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.6e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.7e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.76e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.6e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.92e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.5e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.08e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.4e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.3e1,
+        "y": 2.9e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.4e2,
+        "y": 3.2e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.3e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.4e2,
+        "y": 6.4e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.3e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.4e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.3e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.4e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.4e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.5e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.6e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.7e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.8e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.9e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.1e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.2e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -3.3e1,
+        "y": 3.2e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.8e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.7e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.6e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.5e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.4e1,
+        "y": 3.1e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.4e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.24e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.5e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 2.08e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.6e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.92e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.7e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.76e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
+    },
+    {
+      "position": {
+        "x": -2.8e1,
+        "y": 3e1
+      },
+      "tileset": "catacombs",
+      "offset": {
+        "x": 1.6e2,
+        "y": 4.8e1
+      },
+      "is_solid": true
     }
   ],
   "player_spawn_point": {
-    "x": 4.48e2,
-    "y": 8e2
+    "x": 0e0,
+    "y": 7.68e2
   },
   "enemy_spawn_point": {
     "x": 8.64e2,
     "y": 8e2
   },
   "boundary": {
-    "x": -5.07e2,
+    "x": -1.08e3,
     "y": 0e0,
-    "width": 1.558e3,
-    "height": 1.049e3
+    "width": 2.131e3,
+    "height": 9.89e2
   }
 }

@@ -1,100 +1,95 @@
 const std = @import("std");
 const rl = @import("raylib");
-const Assets = @import("assets.zig").Assets;
+
+const Assets = @import("assets.zig");
 const Toolbox = @import("toolbox.zig").Toolbox;
+const DebugInfo = @import("debug_info.zig").DebugInfo;
+const stats = @import("stats.zig");
+const EntityStats = @import("stats.zig").EntityStats;
+const MapLevel = @import("map.zig").MapLevel;
+const MapEditor = @import("map.zig").MapEditor;
+const AttackLine = @import("attacks.zig").AttackLine;
+const Attack = @import("attacks.zig").Attack;
+const Projectile = @import("attacks.zig").Projectile;
+const AttackKind = @import("attacks.zig").AttackKind;
+const AttackUpgrade = @import("attacks.zig").AttackUpgrade;
+const AttackUpgradeKinds = @import("attacks.zig").AttackUpgradeKinds;
+const attack_info = @import("attacks.zig").attack_info;
+const upgrade_paths = @import("attacks.zig").upgrade_paths;
+const upgrade_info = @import("attacks.zig").upgrade_info;
 
-const SCREEN_WIDTH = 800;
-const SCREEN_HEIGHT = 600;
-pub const TILE_SIZE = 32;
-pub const SPRITE_SIZE = 16;
-pub const PLAYER_SPEED = 200;
-pub const ENEMY_SPEED = 50;
-pub const DECELERATION = 0.85;
-pub const GRAVITY = 800;
-pub const JUMP_SPEED = 500;
+pub const Facing = enum { left, right };
+pub const Entity = struct {
+    allocator: std.mem.Allocator,
+    rect: rl.Rectangle,
+    velocity: rl.Vector2 = rl.Vector2.init(0, 0),
+    facing: Facing = .right,
+    health: i32,
+    stats: EntityStats,
 
-pub const PLAYER_SIZE_X = 30;
-pub const PLAYER_SIZE_Y = 50;
-pub const HAMMER_SIZE_X = 10;
-pub const HAMMER_SIZE_Y = 200;
-pub const HAMMER_HEAD_RADIUS = 30;
-pub const HAMMER_START_ANGLE = 220;
-pub const HAMMER_SWING_ANGLE = 100;
-pub const ATTACK_DURATION = 0.4;
-pub const DAMAGE_COOLDOWN = 1;
-pub const KNOCKBACK_DISTANCE = 300;
+    attack_line: ?AttackLine = null,
+    projectiles: std.BoundedArray(Projectile, 20) = .{},
 
-const Facing = enum { left, right };
-
-var assets: Assets = .{};
-
-pub const Tileset = enum {
-    buildings,
-    hive,
-    interior,
-    rocks,
-    tiles,
-    tree_assets,
-
-    pub fn getTexture(tileset: Tileset) rl.Texture2D {
-        const filename = switch (tileset) {
-            .buildings => "assets/sprites/buildings.png",
-            .hive => "assets/sprites/hive.png",
-            .interior => "assets/sprites/interior.png",
-            .rocks => "assets/sprites/rocks.png",
-            .tiles => "assets/sprites/tiles.png",
-            .tree_assets => "assets/sprites/tree_assets.png",
+    pub fn init(allocator: std.mem.Allocator, spawn_point: rl.Vector2, entity_stats: EntityStats) Entity {
+        return Entity{
+            .allocator = allocator,
+            .rect = rl.Rectangle.init(spawn_point.x, spawn_point.y, entity_stats.size.x, entity_stats.size.y),
+            .stats = entity_stats,
+            .health = entity_stats.max_health,
         };
-        return rl.loadTexture(filename);
     }
 
-    pub fn sourceRect(offset: rl.Vector2) rl.Rectangle {
-        return rl.Rectangle.init(offset.x, offset.y, SPRITE_SIZE, SPRITE_SIZE);
+    pub fn isAlive(self: Entity) bool {
+        return self.health > 0;
     }
-};
 
-const DebugInfo = struct {
-    enabled: bool = false,
-    line_num: i32 = 0,
-    coordsBuffer: [256]u8 = undefined,
+    pub fn center(self: Entity) rl.Vector2 {
+        return rl.Vector2.init(self.rect.x + self.rect.width / 2, self.rect.y + self.rect.height / 2);
+    }
 
-    pub fn draw(self: *DebugInfo, state: *GameState) void {
-        if (self.enabled) {
-            const cam = state.cam;
-            const player = state.player;
-            const map_editor = state.map_editor;
+    pub fn addVelocity(self: *Entity, velocity: rl.Vector2) void {
+        self.velocity = self.velocity.add(velocity).clamp(
+            rl.Vector2.init(-self.stats.max_speed, -self.stats.max_speed),
+            rl.Vector2.init(self.stats.max_speed, self.stats.max_speed),
+        );
+    }
 
-            self.line_num = 0;
-            self.drawText("cam x: {d:.2} y: {d:.2}", .{ cam.target.x, cam.target.y });
-            self.drawText("player x: {d:.2} y: {d:.2}", .{ player.rect.x, player.rect.y });
-            self.drawText("player velocity x: {d:.2} y: {d:.2}", .{ player.velocity.x, player.velocity.y });
-            self.drawText("cursor x: {d:.2} y: {d:.2}", .{ rl.getMousePosition().x, rl.getMousePosition().y });
-            self.drawText("boundary x: {d:.2} y: {d:.2}, width: {d:.2}, height: {d:.2}", .{ map_editor.boundary.x, map_editor.boundary.y, map_editor.boundary.width, map_editor.boundary.height });
-            self.drawText("selected point: {s}", .{@tagName(map_editor.toolbox.selected_point)});
+    pub fn update(self: *Entity, state: *GameState) void {
+        if (self.velocity.x > 0) {
+            self.facing = .right;
+        } else if (self.velocity.x < 0) {
+            self.facing = .left;
         }
+        self.applyMovement(state);
     }
 
-    pub fn drawGrid(self: *DebugInfo) void {
-        if (self.enabled) {
-            const LINES = 100;
-
-            var i: i32 = -LINES;
-            while (i < LINES) : (i += 1) {
-                rl.drawLineEx(rl.Vector2.init(@floatFromInt(i * TILE_SIZE), -9000), rl.Vector2.init(@floatFromInt(i * TILE_SIZE), 9000), 1, rl.Color.light_gray);
-                rl.drawLineEx(rl.Vector2.init(-9000, @floatFromInt(i * TILE_SIZE)), rl.Vector2.init(9000, @floatFromInt(i * TILE_SIZE)), 1, rl.Color.light_gray);
-            }
-        }
+    pub fn draw(self: *Entity, state: *GameState) void {
+        const textureInfo = self.stats.texture;
+        const texture = state.assets.getTexture(textureInfo.asset);
+        texture.drawPro(textureInfo.sourceRect(self.facing), self.rect, rl.Vector2.zero(), 0, rl.Color.white);
     }
 
-    fn drawText(self: *DebugInfo, comptime fmt: []const u8, args: anytype) void {
-        const text = std.fmt.bufPrintZ(&self.coordsBuffer, fmt, args) catch unreachable;
-        rl.drawText(text, 5, 5 + self.line_num * 20, 16, rl.Color.red);
-        self.line_num += 1;
-    }
-};
+    pub fn drawHealthBar(self: *Entity) void {
+        const Y_OFFSET = 8;
+        const green_line_len = self.stats.size.x * @as(f32, @floatFromInt(self.health)) / @as(f32, @floatFromInt(self.stats.max_health));
+        const red_line_len = self.stats.size.x - green_line_len;
 
-const Movable = struct {
-    pub fn applyMovement(rect: *rl.Rectangle, velocity: *rl.Vector2, state: *GameState) void {
+        rl.drawLineEx(
+            rl.Vector2.init(self.rect.x, self.rect.y - Y_OFFSET),
+            rl.Vector2.init(self.rect.x + green_line_len, self.rect.y - Y_OFFSET),
+            2,
+            rl.Color.lime,
+        );
+
+        rl.drawLineEx(
+            rl.Vector2.init(self.rect.x + green_line_len, self.rect.y - Y_OFFSET),
+            rl.Vector2.init(self.rect.x + green_line_len + red_line_len, self.rect.y - Y_OFFSET),
+            2,
+            rl.Color.red,
+        );
+    }
+
+    pub fn applyMovement(self: *Entity, state: *GameState) void {
         // check for collisions twice: once for X axis and once for Y axis
         // Dont apply velocity immediately - instead check for collisions after only applying velocity on one axis
         // e.g. apply X velocity, check for collisions - apply offset if colliding, apply final X position to rect
@@ -105,43 +100,43 @@ const Movable = struct {
                 continue;
             }
 
-            const newXRect = getNewXRect(rect.*, velocity.*);
+            const newXRect = getNewXRect(self.rect, self.velocity);
             if (newXRect.checkCollision(tile.rect())) {
                 const colliding_rect = newXRect.getCollision(tile.rect());
 
                 isXColliding = true;
-                rect.x = newXRect.x + if (tile.rect().x < rect.x) colliding_rect.width else -colliding_rect.width;
-                velocity.x = 0;
+                self.rect.x = newXRect.x + if (tile.rect().x < self.rect.x) colliding_rect.width else -colliding_rect.width;
+                self.velocity.x = 0;
             }
 
-            const newYRect = getNewYRect(rect.*, velocity.*);
+            const newYRect = getNewYRect(self.rect, self.velocity);
             if (newYRect.checkCollision(tile.rect())) {
                 const colliding_rect = newYRect.getCollision(tile.rect());
 
-                rect.y = newYRect.y + if (tile.rect().y < rect.y) colliding_rect.height else -colliding_rect.height;
-                velocity.y = 0;
+                self.rect.y = newYRect.y + if (tile.rect().y < self.rect.y) colliding_rect.height else -colliding_rect.height;
+                self.velocity.y = 0;
                 isYColliding = true;
             }
         }
 
         if (!isXColliding) {
-            rect.x += velocity.x * rl.getFrameTime();
+            self.rect.x += self.velocity.x * rl.getFrameTime();
         }
 
         if (!isYColliding) {
-            rect.y += velocity.y * rl.getFrameTime();
+            self.rect.y += self.velocity.y * rl.getFrameTime();
         }
 
-        if (rect.x < state.map_level.boundary.x) {
-            rect.x = state.map_level.boundary.x;
-        } else if (rect.x > state.map_level.boundary.x + state.map_level.boundary.width) {
-            rect.x = state.map_level.boundary.x + state.map_level.boundary.width;
+        if (self.rect.x < state.map_level.boundary.x) {
+            self.rect.x = state.map_level.boundary.x;
+        } else if (self.rect.x > state.map_level.boundary.x + state.map_level.boundary.width) {
+            self.rect.x = state.map_level.boundary.x + state.map_level.boundary.width;
         }
 
-        if (rect.y < state.map_level.boundary.y) {
-            rect.y = state.map_level.boundary.y;
-        } else if (rect.y > state.map_level.boundary.y + state.map_level.boundary.height) {
-            rect.y = state.map_level.boundary.y + state.map_level.boundary.height;
+        if (self.rect.y < state.map_level.boundary.y) {
+            self.rect.y = state.map_level.boundary.y;
+        } else if (self.rect.y > state.map_level.boundary.y + state.map_level.boundary.height) {
+            self.rect.y = state.map_level.boundary.y + state.map_level.boundary.height;
         }
     }
 
@@ -152,402 +147,453 @@ const Movable = struct {
     pub fn getNewYRect(rect: rl.Rectangle, velocity: rl.Vector2) rl.Rectangle {
         return rl.Rectangle.init(rect.x, rect.y + velocity.y * rl.getFrameTime(), rect.width, rect.height);
     }
+
+    pub fn spawnProjectile(self: *Entity, radius: f32, velocity: rl.Vector2) void {
+        self.projectiles.append(Projectile.init(self.allocator, self.center(), radius, velocity)) catch unreachable;
+    }
 };
 
-const Projectile = struct {
-    position: rl.Vector2,
-    radius: f32,
-    velocity: rl.Vector2,
+pub const ExperienceOrb = struct {
+    entity: Entity,
+    experience: u8 = 0,
+    used: bool = false,
 
-    pub fn update(self: *Projectile) void {
-        self.position.x += self.velocity.x * rl.getFrameTime();
-        self.position.y += self.velocity.y * rl.getFrameTime();
+    pub fn init(allocator: std.mem.Allocator, spawn_point: rl.Vector2) ExperienceOrb {
+        return .{
+            .entity = Entity.init(allocator, spawn_point, stats.experience_orb),
+        };
     }
 
-    pub fn shouldDestroy(self: Projectile, state: *GameState) bool {
-        const boundary = state.map_level.boundary;
-        return self.position.x < boundary.x or self.position.x > boundary.x + boundary.width or self.position.y < boundary.y or self.position.y > boundary.y + boundary.height;
+    pub fn rect(self: *ExperienceOrb) *rl.Rectangle {
+        return &self.entity.rect;
     }
 
-    pub fn draw(self: *Projectile) void {
-        rl.drawCircleGradient(@intFromFloat(self.position.x), @intFromFloat(self.position.y), self.radius, rl.Color.white, rl.Color.red);
+    pub fn velocity(self: *ExperienceOrb) *rl.Vector2 {
+        return &self.entity.velocity;
+    }
+
+    pub fn center(self: ExperienceOrb) rl.Vector2 {
+        return self.entity.center();
+    }
+
+    pub fn update(self: *ExperienceOrb, state: *GameState) void {
+        const distance = state.player.center().distance(self.center());
+        if (distance < stats.pickup_range) {
+            const distanceRatio = 1 - distance / stats.pickup_range;
+            const direction = rl.Vector2.init(state.player.rect().x - self.rect().x, state.player.rect().y - self.rect().y).normalize();
+            self.entity.velocity = direction.scale(self.entity.stats.max_speed * distanceRatio);
+        }
+
+        if (!self.used and rl.checkCollisionRecs(self.rect().*, state.player.rect().*)) {
+            state.player.gainExperience(1);
+            self.used = true;
+        }
+        self.entity.update(state);
+    }
+
+    pub fn shouldDestroy(self: ExperienceOrb) bool {
+        return self.used;
+    }
+
+    pub fn draw(self: *ExperienceOrb) void {
+        rl.drawCircleGradient(@intFromFloat(self.rect().x), @intFromFloat(self.rect().y), self.entity.stats.size.x, rl.Color.sky_blue, rl.Color.lime);
     }
 };
 
 const Enemy = struct {
-    rect: rl.Rectangle,
-    velocity: rl.Vector2 = rl.Vector2.init(0, 0),
-    facing: Facing = .right,
-    health: f32 = 10,
-    simple_ball_attack_time: f64 = -1,
-    spiral_ball_next_attack_time: f64 = SPIRAL_BALL_ATTACK_COOLDOWN,
-    spiral_ball_attack_end_time: f64 = 0,
-    prev_spiral_ball_time: f64 = 0,
-    last_damage_time: f64 = -DAMAGE_COOLDOWN,
-    projectiles: std.BoundedArray(Projectile, 100) = .{},
+    allocator: std.mem.Allocator,
+    entity: Entity,
+    attack: Attack,
+    upgrades: *std.EnumSet(AttackUpgrade),
 
-    const PROJECTILE_SPEED = 100;
-    const DAMAGE_TAKEN_BLINK_FREQUENCY = 0.05;
-
-    const SIMPLE_BALL_ATTACK_PROJ_COUNT = 12;
-    const SIMPLE_BALL_ATTACK_COOLDOWN = 5;
-
-    const SPIRAL_BALL_ATTACK_COOLDOWN = 5;
-    const SPIRAL_BALL_FREQUENCY = 0.2;
-    const SPIRAL_BALL_DURATION = SPIRAL_BALL_FREQUENCY * 10;
-
-    pub fn init(spawn_point: rl.Vector2) Enemy {
+    pub fn init(allocator: std.mem.Allocator, spawn_point: rl.Vector2, entity_stats: EntityStats) Enemy {
+        const upgrades = allocator.create(std.EnumSet(AttackUpgrade)) catch unreachable;
+        upgrades.* = std.EnumSet(AttackUpgrade).initEmpty();
         return .{
-            .rect = rl.Rectangle.init(spawn_point.x, spawn_point.y, PLAYER_SIZE_X, PLAYER_SIZE_Y),
+            .allocator = allocator,
+            .entity = Entity.init(allocator, spawn_point, entity_stats),
+            .attack = Attack.init(allocator, entity_stats.default_attack, upgrades),
+            .upgrades = upgrades,
         };
     }
 
-    pub fn isTakingDamageOnCooldown(self: Enemy) bool {
-        return rl.getTime() - self.last_damage_time < DAMAGE_COOLDOWN;
+    pub fn deinit(self: Enemy) void {
+        self.allocator.destroy(self.upgrades);
     }
 
-    pub fn dealDamage(self: *Enemy, source: *Player, damage: f32) void {
-        if (self.isTakingDamageOnCooldown()) {
-            // dealing damage has 1s cooldown
-            return;
-        }
+    pub fn rect(self: *Enemy) *rl.Rectangle {
+        return &self.entity.rect;
+    }
 
-        self.health -= damage;
-        self.last_damage_time = rl.getTime();
-        const knockback_direction = rl.Vector2.init(self.rect.x - source.rect.x, self.rect.y - source.rect.y).normalize();
-        self.velocity = self.velocity.add(knockback_direction.scale(KNOCKBACK_DISTANCE));
-        rl.playSound(assets.bonk_sound);
+    pub fn velocity(self: *Enemy) *rl.Vector2 {
+        return &self.entity.velocity;
+    }
+
+    pub fn center(self: Enemy) rl.Vector2 {
+        return self.entity.center();
+    }
+
+    pub fn isAlive(self: Enemy) bool {
+        return self.entity.isAlive();
+    }
+
+    pub fn dealDamage(self: *Enemy, state: *GameState, source: *Entity, damage: i32) void {
+        self.entity.health -= damage;
+
+        const knockback_direction = rl.Vector2.init(self.rect().x - source.rect.x, self.rect().y - source.rect.y).normalize();
+        self.velocity().* = self.velocity().add(knockback_direction.scale(stats.knockback_distance));
+
+        if (!self.isAlive()) {
+            state.spawnExperienceOrb(self);
+        }
     }
 
     pub fn update(self: *Enemy, state: *GameState) void {
-        if (self.facing == .left) {
-            self.velocity.x = -ENEMY_SPEED;
-        } else {
-            self.velocity.x = ENEMY_SPEED;
-        }
-        self.velocity.y += GRAVITY * rl.getFrameTime();
+        self.entity.addVelocity(rl.Vector2.init(state.player.rect().x - self.rect().x, state.player.rect().y - self.rect().y).normalize().scale(self.entity.stats.acceleration));
+        self.entity.update(state);
 
-        Movable.applyMovement(&self.rect, &self.velocity, state);
-        for (self.projectiles.slice(), 0..) |*projectile, i| {
+        self.attack.update(&self.entity, state);
+        for (self.entity.projectiles.slice(), 0..) |*projectile, i| {
             projectile.update();
             if (projectile.shouldDestroy(state)) {
-                std.debug.print("destroying projectile\n", .{});
-                _ = self.projectiles.orderedRemove(i);
+                var deleted_projectile = self.entity.projectiles.orderedRemove(i);
+                deleted_projectile.deinit();
+            }
+
+            if (rl.checkCollisionCircleRec(projectile.position, projectile.radius, state.player.rect().*) and !projectile.isAlreadyDamaged(@ptrCast(&state.player))) {
+                state.player.dealDamage(state, 1);
+                projectile.markAsDamaged(@ptrCast(&state.player));
+                projectile.destroy = true;
             }
         }
-
-        const distToLeftEdge = self.rect.x - state.map_level.boundary.x;
-        const distToRightEdge = state.map_level.boundary.x + state.map_level.boundary.width - self.rect.x;
-        if (distToLeftEdge < 10) {
-            self.facing = .right;
-        } else if (distToRightEdge < 10) {
-            self.facing = .left;
-        }
-
-        const time = rl.getTime();
-        if (time - self.simple_ball_attack_time > SIMPLE_BALL_ATTACK_COOLDOWN) {
-            std.debug.print("simple ball\n", .{});
-            self.simple_ball_attack_time = rl.getTime();
-            self.simpleBallAttack();
-        }
-
-        if (time > self.spiral_ball_next_attack_time) {
-            self.spiral_ball_attack_end_time = time + SPIRAL_BALL_DURATION;
-            self.spiral_ball_next_attack_time = time + SPIRAL_BALL_ATTACK_COOLDOWN;
-        }
-
-        if (time < self.spiral_ball_attack_end_time) {
-            std.debug.print("spiral ball\n", .{});
-            self.spiralBallAttack(&state.player);
-        }
     }
 
-    pub fn simpleBallAttack(self: *Enemy) void {
-        for (0..SIMPLE_BALL_ATTACK_PROJ_COUNT) |i| {
-            const angle = std.math.degreesToRadians(@as(f32, @floatFromInt(360 * i / SIMPLE_BALL_ATTACK_PROJ_COUNT)));
-            const velocity = rl.Vector2.init(1, 0).rotate(angle).scale(PROJECTILE_SPEED);
-            std.debug.print("velocity: {d:.2}, {d:.2}\n", .{ velocity.x, velocity.y });
-            self.projectiles.append(.{
-                .position = rl.Vector2.init(self.rect.x + self.rect.width / 2, self.rect.y + self.rect.height / 2),
-                .radius = 10,
-                .velocity = velocity,
-            }) catch std.debug.print("Failed to append projectile\n", .{});
-        }
+    pub fn draw(self: *Enemy, state: *GameState) void {
+        self.attack.draw(&self.entity);
+        self.entity.draw(state);
+        self.entity.drawHealthBar();
     }
 
-    pub fn spiralBallAttack(self: *Enemy, target: *Player) void {
-        const prev_ball_time_delta = rl.getTime() - self.prev_spiral_ball_time;
-        if (prev_ball_time_delta > SPIRAL_BALL_FREQUENCY) {
-            const attack_time_until_done = self.spiral_ball_attack_end_time - rl.getTime();
-            const angle = std.math.degreesToRadians(45 + -90 * attack_time_until_done / SPIRAL_BALL_DURATION);
-            self.prev_spiral_ball_time = rl.getTime();
-            self.projectiles.append(.{
-                .position = rl.Vector2.init(self.rect.x + self.rect.width / 2, self.rect.y + self.rect.height / 2),
-                .radius = 10,
-                .velocity = rl.Vector2.init(target.rect.x - self.rect.x, target.rect.y - self.rect.y).normalize().rotate(@floatCast(angle)).scale(PROJECTILE_SPEED),
-            }) catch std.debug.print("Failed to append projectile\n", .{});
-        }
-    }
-
-    pub fn draw(self: *Enemy) void {
-        var color = rl.Color.red.fade(self.health / 10);
-        if (self.isTakingDamageOnCooldown()) {
-            color = color.fade(self.health / 10 * self.damageTakenFade());
-        }
-        rl.drawRectangleRec(self.rect, color);
-
-        for (self.projectiles.slice()) |*projectile| {
-            projectile.draw();
-        }
-    }
-
-    pub fn damageTakenFade(self: *Enemy) f32 {
-        const time_delta = rl.getTime() - self.last_damage_time;
-        const rem = @mod(time_delta, DAMAGE_TAKEN_BLINK_FREQUENCY * 2);
-
-        if (rem < DAMAGE_TAKEN_BLINK_FREQUENCY) {
-            return 0.0;
-        } else {
-            return 1.0;
-        }
-    }
-};
-
-const Hammer = struct {
-    rect: rl.Rectangle = rl.Rectangle.init(0, 0, HAMMER_SIZE_X, HAMMER_SIZE_Y),
-    facing: Facing = .right,
-    rotation: f32 = 0,
-    attack_time: f64 = 0,
-
-    pub fn checkCollision(self: Hammer, rect: rl.Rectangle) bool {
-        return rl.checkCollisionCircleRec(self.headPoint(), HAMMER_HEAD_RADIUS, rect);
-    }
-
-    pub fn headPoint(self: Hammer) rl.Vector2 {
-        return rl.Vector2.init(self.rect.x, self.rect.y).add(rl.Vector2.init(0, HAMMER_SIZE_Y).rotate(std.math.degreesToRadians(self.rotation)));
-    }
-
-    pub fn update(self: *Hammer, state: *GameState) void {
-        const player = &state.player;
-        self.rect.x = player.rect.x;
-        self.rect.y = player.rect.y + PLAYER_SIZE_Y / 3;
-        self.facing = player.facing;
-
-        if (self.facing == .left) {
-            self.rect.x += PLAYER_SIZE_X - HAMMER_SIZE_X / 2;
-        } else {
-            self.rect.x += HAMMER_SIZE_X / 2;
-        }
-
-        const attackDelta = rl.getTime() - self.attack_time;
-        self.rotation = @floatCast(HAMMER_START_ANGLE + HAMMER_SWING_ANGLE * attackDelta / ATTACK_DURATION);
-
-        if (self.facing == .left) {
-            self.rotation *= -1;
-        }
-
-        if (attackDelta > ATTACK_DURATION) {
-            self.attack_time = 0;
-        }
-
-        if (self.attack_time > 0 and self.checkCollision(state.enemy.rect)) {
-            state.enemy.dealDamage(&state.player, 1);
-        }
-    }
-
-    pub fn draw(self: *Hammer) void {
-        if (self.attack_time > 0) {
-            // Handle
-            rl.drawRectanglePro(self.rect, rl.Vector2.init(HAMMER_SIZE_X / 2, 0), self.rotation, rl.Color.red);
-            // Head
-            rl.drawCircleV(self.headPoint(), HAMMER_HEAD_RADIUS, rl.Color.red);
-        }
+    pub fn shouldDestroy(self: Enemy) bool {
+        return self.entity.health <= 0;
     }
 };
 
 pub const Player = struct {
-    rect: rl.Rectangle,
-    facing: Facing = .right,
-    hammer: Hammer = .{},
-    jump_time: f64 = -1,
-    velocity: rl.Vector2 = rl.Vector2.init(0, 0),
+    allocator: std.mem.Allocator,
+    entity: Entity,
+    attacks: std.BoundedArray(Attack, std.meta.fields(AttackKind).len) = .{},
+    upgrades: *std.EnumSet(AttackUpgrade),
 
-    pub fn init(start_point: rl.Vector2) Player {
-        return Player{
-            .rect = rl.Rectangle.init(start_point.x, start_point.y, PLAYER_SIZE_X, PLAYER_SIZE_Y),
+    experience: u8 = 0,
+    level: u8 = 1,
+    death_time: f64 = 0,
+
+    pub fn init(allocator: std.mem.Allocator, start_point: rl.Vector2) Player {
+        const upgrades = allocator.create(std.EnumSet(AttackUpgrade)) catch unreachable;
+        upgrades.* = std.EnumSet(AttackUpgrade).initEmpty();
+        var self = Player{
+            .allocator = allocator,
+            .entity = Entity.init(allocator, start_point, stats.player),
+            .upgrades = upgrades,
         };
+
+        self.attacks.append(Attack.init(allocator, .word_of_radiance, self.upgrades)) catch unreachable;
+
+        return self;
+    }
+
+    pub fn deinit(self: *Player) void {
+        self.allocator.destroy(self.upgrades);
+    }
+
+    pub fn rect(self: *Player) *rl.Rectangle {
+        return &self.entity.rect;
+    }
+
+    pub fn velocity(self: *Player) *rl.Vector2 {
+        return &self.entity.velocity;
+    }
+
+    pub fn center(self: Player) rl.Vector2 {
+        return self.entity.center();
+    }
+
+    pub fn gainExperience(self: *Player, amount: u8) void {
+        self.experience += amount;
+
+        if (self.experience >= stats.experience_for_next_level) {
+            self.level += 1;
+            self.experience = 0;
+        }
+    }
+
+    pub fn addAttack(self: *Player, attack_kind: AttackKind) void {
+        self.attacks.append(Attack.init(self.allocator, attack_kind, self.upgrades)) catch unreachable;
+    }
+
+    pub fn addUpgrade(self: *Player, upgrade_kind: AttackUpgradeKinds) void {
+        const upgrade = upgrade_kind.getNextUpgrade(self.upgrades).?;
+        self.upgrades.insert(upgrade);
     }
 
     pub fn update(self: *Player, state: *GameState) void {
-        const jump_time_delta = rl.getTime() - self.jump_time;
-        if (rl.isKeyUp(rl.KeyboardKey.key_space) and jump_time_delta < 0.1) {
-            self.velocity.y *= 0.6;
-        }
+        var velocityDelta = rl.Vector2.init(0, 0);
+        if (self.isAlive()) {
+            if (rl.isKeyDown(rl.KeyboardKey.key_w)) {
+                velocityDelta.y = -self.entity.stats.acceleration;
+            } else if (rl.isKeyDown(rl.KeyboardKey.key_s)) {
+                velocityDelta.y = self.entity.stats.acceleration;
+            } else {
+                velocityDelta.y = -self.velocity().y;
+            }
 
-        if (rl.isKeyDown(rl.KeyboardKey.key_space) and self.velocity.y == 0) {
-            self.jump_time = rl.getTime();
-            self.velocity.y = -JUMP_SPEED;
-        }
-
-        self.velocity.y += GRAVITY * rl.getFrameTime();
-        if (rl.isKeyDown(rl.KeyboardKey.key_d)) {
-            self.velocity.x = PLAYER_SPEED;
-            self.facing = .right;
-        } else if (rl.isKeyDown(rl.KeyboardKey.key_a)) {
-            self.velocity.x = -PLAYER_SPEED;
-            self.facing = .left;
+            if (rl.isKeyDown(rl.KeyboardKey.key_d)) {
+                velocityDelta.x = self.entity.stats.acceleration;
+            } else if (rl.isKeyDown(rl.KeyboardKey.key_a)) {
+                velocityDelta.x = -self.entity.stats.acceleration;
+            } else {
+                velocityDelta.x = -self.velocity().x;
+            }
         } else {
-            self.velocity.x *= DECELERATION;
+            velocityDelta.x = -self.velocity().x;
+            velocityDelta.y = -self.velocity().y;
         }
 
-        if (rl.isKeyPressed(rl.KeyboardKey.key_r)) {
-            self.hammer.attack_time = rl.getTime();
+        self.entity.addVelocity(velocityDelta);
+        self.entity.update(state);
+
+        for (self.attacks.slice()) |*attack| {
+            attack.update(&self.entity, state);
         }
-        Movable.applyMovement(&self.rect, &self.velocity, state);
-        self.hammer.update(state);
-    }
 
-    pub fn draw(self: *Player) void {
-        rl.drawRectangleRec(self.rect, rl.Color.green);
-        if (self.facing == .right) {
-            rl.drawCircleV(rl.Vector2.init(self.rect.x + PLAYER_SIZE_X, self.rect.y + 5), 5, rl.Color.dark_purple);
-        } else {
-            rl.drawCircleV(rl.Vector2.init(self.rect.x, self.rect.y + 5), 5, rl.Color.dark_purple);
-        }
-        self.hammer.draw();
-    }
+        if (self.entity.attack_line) |*attack_line| {
+            attack_line.update(self.entity);
 
-    pub fn getCenter(self: Player) rl.Vector2 {
-        return rl.Vector2.init(self.rect.x + self.rect.width / 2, self.rect.y + self.rect.height / 2);
-    }
-};
-
-pub const Tile = struct {
-    position: rl.Vector2,
-    tileset: Tileset = .tiles,
-    offset: rl.Vector2 = rl.Vector2.init(0, 0),
-    is_solid: bool = true,
-
-    pub fn rect(self: Tile) rl.Rectangle {
-        return rl.Rectangle.init(
-            self.position.x * TILE_SIZE,
-            self.position.y * TILE_SIZE,
-            TILE_SIZE,
-            TILE_SIZE,
-        );
-    }
-
-    pub fn draw(self: Tile, state: *GameState) void {
-        if (state.sprite_tiles.get(self.tileset)) |texture| {
-            texture.drawPro(Tileset.sourceRect(self.offset), self.rect(), rl.Vector2.zero(), 0, rl.Color.white);
-        }
-    }
-
-    pub fn toTilePos(pos: rl.Vector2) rl.Vector2 {
-        const x = @divFloor(pos.x, TILE_SIZE);
-        const y = @divFloor(pos.y, TILE_SIZE);
-
-        return rl.Vector2.init(x, y);
-    }
-};
-
-pub const MapEditor = struct {
-    toolbox: Toolbox,
-    tiles: std.ArrayList(Tile),
-    player_spawn_point: rl.Vector2,
-    enemy_spawn_point: rl.Vector2,
-    boundary: rl.Rectangle,
-
-    pub fn init(allocator: std.mem.Allocator, map_level: *const MapLevel) MapEditor {
-        var tiles = std.ArrayList(Tile).init(allocator);
-        tiles.appendSlice(map_level.tiles) catch unreachable;
-
-        return MapEditor{
-            .tiles = tiles,
-            .player_spawn_point = map_level.player_spawn_point,
-            .enemy_spawn_point = map_level.enemy_spawn_point,
-            .boundary = map_level.boundary,
-            .toolbox = Toolbox.init(allocator),
-        };
-    }
-
-    pub fn update(self: *MapEditor, state: *GameState) void {
-        self.toolbox.update(state);
-    }
-
-    pub fn draw(self: *MapEditor, state: *GameState) void {
-        for (self.tiles.items) |tile| {
-            tile.draw(state);
-            if (tile.is_solid) {
-                rl.drawRectangleRec(tile.rect(), rl.Color.red.fade(0.3));
+            for (state.enemies.items) |*enemy| {
+                if (enemy.isAlive() and attack_line.checkCollision(enemy.entity.rect) and !attack_line.isAlreadyDamaged(@ptrCast(enemy))) {
+                    enemy.dealDamage(state, &self.entity, 1);
+                    attack_line.markAsDamaged(@ptrCast(enemy));
+                }
             }
         }
+        for (self.entity.projectiles.slice(), 0..) |*projectile, i| {
+            projectile.update();
+            if (projectile.shouldDestroy(state)) {
+                var deleted_projectile = self.entity.projectiles.orderedRemove(i);
+                deleted_projectile.deinit();
+            }
 
-        rl.drawCircleV(self.player_spawn_point.addValue(TILE_SIZE / 2), 10, rl.Color.lime);
-        rl.drawCircleV(self.enemy_spawn_point.addValue(TILE_SIZE / 2), 10, rl.Color.red.brightness(-0.2));
-        rl.drawRectangleLinesEx(self.boundary, 3, rl.Color.blue);
-        self.toolbox.draw(state);
+            for (state.enemies.items) |*enemy| {
+                if (enemy.isAlive() and projectile.checkCollision(enemy.entity.rect) and !projectile.isAlreadyDamaged(@ptrCast(enemy))) {
+                    enemy.dealDamage(state, &self.entity, 1);
+                    projectile.markAsDamaged(@ptrCast(enemy));
+                    projectile.destroy = true;
+                }
+            }
+        }
     }
 
-    pub fn toMapLevel(self: *MapEditor) MapLevel {
-        return MapLevel{
-            .tiles = self.tiles.items,
-            .boundary = self.boundary,
-            .player_spawn_point = self.player_spawn_point,
-            .enemy_spawn_point = self.enemy_spawn_point,
-        };
+    pub fn draw(self: *Player, state: *GameState) void {
+        self.entity.draw(state);
+
+        for (self.attacks.slice()) |*attack| {
+            attack.draw(&self.entity);
+        }
+
+        for (self.entity.projectiles.slice()) |*projectile| {
+            projectile.draw();
+        }
+
+        self.entity.drawHealthBar();
+
+        if (!self.isAlive()) {
+            const font_size = 100;
+            const time_delta = std.math.clamp(rl.getTime() - self.death_time, 0, 3);
+            const opacity = time_delta / 3;
+            const screen_origin = rl.getScreenToWorld2D(rl.Vector2.zero(), state.cam);
+            rl.drawRectangleV(
+                screen_origin,
+                rl.Vector2.init(@floatFromInt(rl.getScreenWidth()), @floatFromInt(rl.getScreenHeight())),
+                rl.Color.black.fade(@floatCast(opacity)),
+            );
+
+            rl.drawText(
+                "You Died",
+                @as(i32, @intFromFloat(screen_origin.x)) + @divFloor(rl.getScreenWidth(), 2) - font_size * 2,
+                @as(i32, @intFromFloat(screen_origin.y)) + @divFloor(rl.getScreenHeight(), 2),
+                font_size,
+                rl.Color.white.fade(@floatCast(opacity)),
+            );
+        }
     }
 
-    pub fn save(self: *MapEditor) !void {
-        const file = try std.fs.cwd().createFile("map.json", .{});
-        defer file.close();
+    pub fn isAlive(self: Player) bool {
+        return self.entity.isAlive();
+    }
 
-        const writer = file.writer();
+    pub fn dealDamage(self: *Player, state: *GameState, damage: i32) void {
+        if (self.isAlive()) {
+            self.entity.health -= damage;
+            rl.playSound(state.assets.getSound(.inc_damage));
 
-        try std.json.stringify(MapLevel{
-            .tiles = self.tiles.items,
-            .boundary = self.boundary,
-            .player_spawn_point = self.player_spawn_point,
-            .enemy_spawn_point = self.enemy_spawn_point,
-        }, .{ .whitespace = .indent_2 }, writer);
+            if (!self.isAlive()) {
+                self.death_time = rl.getTime();
+                rl.playSound(state.assets.getSound(.you_died));
+            }
+        }
     }
 };
 
-const MapLevel = struct {
-    tiles: []const Tile = &[_]Tile{
-        Tile{ .position = rl.Vector2.init(0, 3) },
-        Tile{ .position = rl.Vector2.init(1, 3) },
-        Tile{ .position = rl.Vector2.init(2, 3) },
-        Tile{ .position = rl.Vector2.init(3, 3) },
-    },
-    player_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
-    enemy_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
-    boundary: rl.Rectangle = rl.Rectangle.init(0, 0, 1000, 1000),
+pub const Choice = union(enum) {
+    weapon: AttackKind,
+    upgrade: AttackUpgradeKinds,
+};
 
-    pub fn load(allocator: std.mem.Allocator) !MapLevel {
-        const file = std.fs.cwd().openFile("map.json", .{}) catch |err| switch (err) {
-            error.FileNotFound => {
-                std.debug.print("File map.json not found\n", .{});
-                return MapLevel{};
-            },
-            else => |e| return e,
+const ALL_CHOICES = [_]Choice{
+    .{ .weapon = .word_of_radiance },
+    .{ .weapon = .sacred_flame },
+    .{ .upgrade = .hammer_smash_repeats },
+    .{ .upgrade = .hammer_smash_more_aoe },
+    .{ .upgrade = .hammer_smash_less_cd },
+    .{ .upgrade = .word_of_radiance_damage },
+    .{ .upgrade = .word_of_radiance_faster },
+    .{ .upgrade = .word_of_radiance_wider },
+    .{ .upgrade = .sacred_flame_more_targets },
+    .{ .upgrade = .sacred_flame_less_cd },
+    .{ .upgrade = .sacred_flame_more_knockback },
+};
+
+pub const UpgradeSelectionMenu = struct {
+    show: bool = false,
+    available_choices: std.ArrayList(Choice),
+    current_choices: [3]usize = undefined,
+    current_choice: usize = 0,
+
+    pub fn init() UpgradeSelectionMenu {
+        var available_choices = std.ArrayList(Choice).init(std.heap.page_allocator);
+        available_choices.appendSlice(&ALL_CHOICES) catch unreachable;
+        return .{
+            .available_choices = available_choices,
         };
-        defer file.close();
-
-        const file_reader = file.reader();
-        var json_reader = std.json.reader(allocator, file_reader);
-
-        const parsedMapLevel = std.json.parseFromTokenSource(MapLevel, allocator, &json_reader, .{}) catch |err| {
-            std.debug.print("Error parsing map.json: {s}\n", .{@errorName(err)});
-            return MapLevel{};
-        };
-
-        return parsedMapLevel.value;
     }
 
-    pub fn draw(self: *MapLevel, state: *GameState) void {
-        for (self.tiles) |tile| {
-            tile.draw(state);
+    pub fn showMenu(self: *UpgradeSelectionMenu, state: *GameState) void {
+        self.show = true;
+        self.current_choice = 0;
+        self.resetChoices();
+        rl.playSound(state.assets.getSound(.menu_open));
+    }
+
+    pub fn resetChoices(self: *UpgradeSelectionMenu) void {
+        var prng = std.Random.DefaultPrng.init(@intFromFloat(rl.getTime()));
+        var rolls = std.BoundedArray(usize, 3).init(0) catch unreachable;
+        var roll_num: u8 = 0;
+        while (roll_num < self.current_choices.len) {
+            const roll = prng.random().uintLessThan(usize, self.available_choices.items.len);
+
+            if (std.mem.indexOfScalar(usize, rolls.slice(), roll) != null) {
+                continue;
+            }
+
+            rolls.append(roll) catch unreachable;
+            roll_num += 1;
+        }
+
+        @memcpy(self.current_choices[0..], rolls.slice());
+    }
+
+    pub fn update(self: *UpgradeSelectionMenu, state: *GameState) void {
+        if (rl.isKeyPressed(rl.KeyboardKey.key_enter)) {
+            const choice_idx = self.current_choices[self.current_choice];
+            const choice = self.available_choices.items[choice_idx];
+            switch (choice) {
+                .weapon => |weapon_kind| state.player.addAttack(weapon_kind),
+                .upgrade => |upgrade_kind| state.player.addUpgrade(upgrade_kind),
+            }
+            rl.playSound(state.assets.getSound(.menu_choose));
+            self.removeChoiceIfNeeded();
+            self.show = false;
+        }
+
+        if (self.show) {
+            if (rl.isKeyPressed(rl.KeyboardKey.key_w)) {
+                if (self.current_choice == 0) {
+                    self.current_choice = self.current_choices.len - 1;
+                } else {
+                    self.current_choice -= 1;
+                }
+            } else if (rl.isKeyPressed(rl.KeyboardKey.key_s)) {
+                self.current_choice += 1;
+                if (self.current_choice >= self.current_choices.len) {
+                    self.current_choice = 0;
+                }
+            }
+        }
+    }
+
+    pub fn removeChoiceIfNeeded(self: *UpgradeSelectionMenu) void {
+        const choice_idx = self.current_choices[self.current_choice];
+        const choice = self.available_choices.items[choice_idx];
+        if (choice == .weapon) {
+            _ = self.available_choices.orderedRemove(choice_idx);
+        } else if (choice == .upgrade) {
+            const is_upgrade_path_done = false;
+            if (is_upgrade_path_done) {
+                _ = self.available_choices.orderedRemove(choice_idx);
+            }
+        }
+    }
+
+    pub fn draw(self: UpgradeSelectionMenu, state: *GameState) void {
+        const MENU_WIDTH = 500;
+        const MENU_HEIGHT = 300;
+
+        if (!self.show) {
+            return;
+        }
+
+        const screen_pos = rl.Vector2.init(@floatFromInt(@divFloor(rl.getScreenWidth(), 2) - @divFloor(MENU_WIDTH, 2)), @floatFromInt(@divFloor(rl.getScreenHeight(), 2) - @divFloor(MENU_HEIGHT, 2)));
+        var menu_pos = rl.getScreenToWorld2D(screen_pos, state.cam);
+
+        rl.drawRectangleRec(rl.Rectangle.init(menu_pos.x, menu_pos.y, MENU_WIDTH, MENU_HEIGHT), rl.Color.white);
+        rl.drawRectangleLinesEx(rl.Rectangle.init(menu_pos.x, menu_pos.y, MENU_WIDTH, MENU_HEIGHT), 2, rl.Color.black);
+
+        // Offset for title
+        menu_pos.x += 15;
+        menu_pos.y += 15;
+
+        rl.drawText("Choose an upgrade", @intFromFloat(menu_pos.x), @intFromFloat(menu_pos.y), 30, rl.Color.black);
+
+        // Offset for items
+        menu_pos.x += 25;
+        menu_pos.y += 45;
+        for (self.current_choices, 0..) |choice_idx, i| {
+            const choice = self.available_choices.items[choice_idx];
+            const choice_info = switch (choice) {
+                .weapon => |weapon_kind| blk: {
+                    break :blk .{ .title = attack_info.get(weapon_kind).name, .description = attack_info.get(weapon_kind).description };
+                },
+                .upgrade => |upgrade_kind| blk: {
+                    const next_upgrade = upgrade_kind.getNextUpgrade(state.player.upgrades).?;
+                    break :blk .{ .title = upgrade_info.get(next_upgrade).name, .description = upgrade_info.get(next_upgrade).description };
+                },
+            };
+
+            menu_pos.y += 25;
+            if (i > 0) {
+                menu_pos.y += 25;
+            }
+
+            if (i == self.current_choice) {
+                const cursor_rect = rl.Rectangle.init(menu_pos.x - 10, menu_pos.y - 10, MENU_WIDTH - 65, 60);
+                rl.drawRectangleLinesEx(cursor_rect, 2, rl.Color.lime);
+            }
+
+            rl.drawText(choice_info.title, @intFromFloat(menu_pos.x), @intFromFloat(menu_pos.y), 20, rl.Color.black);
+
+            menu_pos = rl.Vector2.init(menu_pos.x, menu_pos.y + 25);
+            rl.drawText(choice_info.description, @intFromFloat(menu_pos.x), @intFromFloat(menu_pos.y), 14, rl.Color.black);
         }
     }
 };
@@ -556,43 +602,55 @@ pub const GameState = struct {
     const Mode = enum { editor, play };
 
     allocator: std.mem.Allocator,
+    assets: Assets,
     mode: Mode = .play,
     player: Player,
-    enemy: Enemy,
+    enemies: std.ArrayList(Enemy),
+    xp_orbs: std.ArrayList(ExperienceOrb),
+    upgrade_selection_menu: UpgradeSelectionMenu,
     cam: rl.Camera2D,
     map_level: MapLevel,
     map_editor: MapEditor,
     debug_info: DebugInfo = .{},
-    sprite_tiles: std.EnumMap(Tileset, rl.Texture2D),
+    last_spawn_time: f64 = 0,
 
     pub fn init(allocator: std.mem.Allocator) GameState {
+        const assets = Assets.init();
         const map_level = MapLevel.load(allocator) catch unreachable;
-        const player = Player.init(map_level.player_spawn_point);
-        var sprite_tiles = std.EnumMap(Tileset, rl.Texture2D){};
-
-        inline for (std.meta.fields(Tileset)) |kind| {
-            sprite_tiles.put(@enumFromInt(kind.value), Tileset.getTexture(@enumFromInt(kind.value)));
-        }
+        const player = Player.init(allocator, map_level.player_spawn_point);
 
         return GameState{
             .allocator = allocator,
+            .assets = assets,
             .player = player,
-            .enemy = Enemy.init(map_level.enemy_spawn_point),
+            .enemies = std.ArrayList(Enemy).init(allocator),
+            .xp_orbs = std.ArrayList(ExperienceOrb).init(allocator),
+            .upgrade_selection_menu = UpgradeSelectionMenu.init(),
             .cam = rl.Camera2D{
-                .target = player.getCenter(),
+                .target = player.center(),
                 .offset = getScreenCenter(),
                 .rotation = 0,
                 .zoom = 1,
             },
-            .sprite_tiles = sprite_tiles,
             .map_level = map_level,
             .map_editor = MapEditor.init(allocator, &map_level),
         };
     }
 
-    pub fn spawnEntities(self: *GameState) void {
-        self.player = Player.init(self.map_level.player_spawn_point);
-        self.enemy = Enemy.init(self.map_level.enemy_spawn_point);
+    pub fn initEntities(self: *GameState) void {
+        for (self.enemies.items) |*enemy| {
+            enemy.deinit();
+        }
+        self.enemies.clearAndFree();
+        self.xp_orbs.clearAndFree();
+
+        self.player.deinit();
+        self.player = Player.init(self.allocator, self.map_level.player_spawn_point);
+    }
+
+    pub fn spawnExperienceOrb(self: *GameState, enemy: *Enemy) void {
+        std.debug.print("spawnExperienceOrb\n", .{});
+        self.xp_orbs.append(ExperienceOrb.init(self.allocator, enemy.center())) catch unreachable;
     }
 
     pub fn tick(self: *GameState) void {
@@ -605,35 +663,79 @@ pub const GameState = struct {
             if (self.mode == .play) {
                 self.map_editor.save() catch unreachable;
                 self.map_level = self.map_editor.toMapLevel();
-                self.spawnEntities();
+                self.initEntities();
             }
         }
 
-        if (self.mode == .editor) {
-            self.map_editor.update(self);
-        } else {
-            self.player.update(self);
-            self.enemy.update(self);
+        if (rl.isKeyPressed(rl.KeyboardKey.key_f3)) {
+            self.upgrade_selection_menu.showMenu(self);
         }
 
-        if (self.mode == .play) {
-            const minTarget = rl.Vector2.init(
-                self.map_level.boundary.x + self.cam.offset.x,
-                self.map_level.boundary.y + self.cam.offset.y,
-            );
-            const maxTarget = rl.Vector2.init(
-                self.map_level.boundary.x - self.cam.offset.x + self.map_level.boundary.width,
-                self.map_level.boundary.y - self.cam.offset.y + self.map_level.boundary.height,
-            );
+        switch (self.mode) {
+            .editor => self.updateEditorMode(),
+            .play => self.updatePlayMode(),
+        }
+    }
 
-            self.cam.target = self.player.getCenter().clamp(minTarget, maxTarget);
-        } else {
-            if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_right)) {
-                self.cam.target = rl.Vector2.add(self.cam.target, rl.getMouseDelta().scale(-1));
+    pub fn updatePlayMode(self: *GameState) void {
+        self.upgrade_selection_menu.update(self);
 
-                var cursor = self.map_editor.toolbox;
-                cursor.pos = cursor.pos.add(rl.getMouseDelta().scale(-1));
+        if (self.upgrade_selection_menu.show) {
+            return;
+        }
+
+        var i = self.xp_orbs.items.len;
+        while (i > 0) {
+            i -|= 1;
+            var orb = &self.xp_orbs.items[i];
+            orb.update(self);
+            if (orb.shouldDestroy()) {
+                _ = self.xp_orbs.orderedRemove(i);
             }
+        }
+
+        i = self.enemies.items.len;
+        while (i > 0) {
+            i -|= 1;
+            var enemy = &self.enemies.items[i];
+            enemy.update(self);
+            if (enemy.shouldDestroy()) {
+                const deleted_enemy = self.enemies.orderedRemove(i);
+                deleted_enemy.deinit();
+            }
+        }
+
+        self.player.update(self);
+
+        if (rl.getTime() - self.last_spawn_time > 1) {
+            self.last_spawn_time = rl.getTime();
+            self.enemies.append(Enemy.init(self.allocator, self.map_level.enemy_spawn_point, stats.bat)) catch unreachable;
+        }
+
+        if (!self.player.isAlive() and rl.isKeyPressed(rl.KeyboardKey.key_r)) {
+            self.initEntities();
+            rl.stopSound(self.assets.getSound(.you_died));
+        }
+
+        const minTarget = rl.Vector2.init(
+            self.map_level.boundary.x + self.cam.offset.x,
+            self.map_level.boundary.y + self.cam.offset.y,
+        );
+        const maxTarget = rl.Vector2.init(
+            self.map_level.boundary.x - self.cam.offset.x + self.map_level.boundary.width,
+            self.map_level.boundary.y - self.cam.offset.y + self.map_level.boundary.height,
+        );
+
+        self.cam.target = self.player.center().clamp(minTarget, maxTarget);
+    }
+
+    pub fn updateEditorMode(self: *GameState) void {
+        self.map_editor.update(self);
+        if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_right)) {
+            self.cam.target = rl.Vector2.add(self.cam.target, rl.getMouseDelta().scale(-1));
+
+            var cursor = self.map_editor.toolbox;
+            cursor.pos = cursor.pos.add(rl.getMouseDelta().scale(-1));
         }
     }
 
@@ -646,16 +748,30 @@ pub const GameState = struct {
         rl.beginMode2D(self.cam);
         defer rl.endMode2D();
 
-        if (self.mode == .editor) {
-            self.map_editor.draw(self);
-        } else {
-            self.map_level.draw(self);
-            self.player.draw();
-            self.enemy.draw();
+        switch (self.mode) {
+            .editor => self.drawEditorMode(),
+            .play => self.drawPlayMode(),
         }
 
         self.debug_info.drawGrid();
         self.debug_info.draw(self);
+    }
+
+    pub fn drawPlayMode(self: *GameState) void {
+        self.map_level.draw(self);
+        for (self.enemies.items) |*enemy| {
+            enemy.draw(self);
+        }
+        self.player.draw(self);
+        for (self.xp_orbs.items) |*orb| {
+            orb.draw();
+        }
+
+        self.upgrade_selection_menu.draw(self);
+    }
+
+    pub fn drawEditorMode(self: *GameState) void {
+        self.map_editor.draw(self);
     }
 
     pub fn getScreenCenter() rl.Vector2 {
@@ -667,7 +783,7 @@ pub const GameState = struct {
 };
 
 pub fn main() anyerror!void {
-    rl.initWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Save the Druga");
+    rl.initWindow(stats.screen_width, stats.screen_width, "Save the Druga");
     rl.initAudioDevice();
     defer rl.closeWindow(); // Close window and OpenGL context
 
@@ -676,7 +792,6 @@ pub fn main() anyerror!void {
 
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
 
-    assets.init();
     var state = GameState.init(std.heap.page_allocator);
 
     // Main game loop
