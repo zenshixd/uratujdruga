@@ -106,6 +106,7 @@ pub const MapEditor = struct {
         }
 
         rl.drawCircleV(self.player_spawn_point.addValue(stats.tile_size / 2), 10, rl.Color.lime);
+        rl.drawCircleV(self.druga_spawn_point.addValue(stats.tile_size / 2), 10, rl.Color.pink);
         rl.drawRectangleLinesEx(self.boundary, 3, rl.Color.blue);
         self.toolbox.draw(state);
     }
@@ -128,6 +129,7 @@ pub const MapEditor = struct {
             .tiles = self.tiles.items,
             .boundary = self.boundary,
             .player_spawn_point = self.player_spawn_point,
+            .druga_spawn_point = self.druga_spawn_point,
         }, .{ .whitespace = .indent_2 }, writer);
     }
 };

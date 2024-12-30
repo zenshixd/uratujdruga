@@ -239,6 +239,7 @@ pub const Toolbox = struct {
         } else {
             const textureColor = switch (self.kind) {
                 .start_point => rl.Color.lime,
+                .druga_spawn_point => rl.Color.pink,
                 else => rl.Color.white,
             };
             rl.drawTextureV(self.getCursorIcon(state.assets), self.pos, textureColor);
@@ -251,7 +252,7 @@ pub const Toolbox = struct {
             .erase => assets.getTexture(.erase),
             .paint => assets.getTexture(.paint),
             .make_solid => assets.getTexture(.make_solid),
-            .start_point => assets.getTexture(.spawn_point),
+            .start_point, .druga_spawn_point => assets.getTexture(.spawn_point),
             .move_boundary => assets.getTexture(.move_boundary),
         };
     }

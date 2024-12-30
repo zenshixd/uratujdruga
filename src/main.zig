@@ -295,6 +295,24 @@ pub const Enemy = struct {
     }
 };
 
+pub const Druga = struct {
+    entity: Entity,
+
+    pub fn init(allocator: std.mem.Allocator, spawn_point: rl.Vector2) Druga {
+        return .{
+            .entity = Entity.init(allocator, spawn_point, stats.druga),
+        };
+    }
+
+    pub fn update(self: *Druga, state: *GameState) void {
+        self.entity.update(state);
+    }
+
+    pub fn draw(self: *Druga, state: *GameState) void {
+        self.entity.draw(state);
+    }
+};
+
 pub const Player = struct {
     allocator: std.mem.Allocator,
     entity: Entity,
@@ -627,6 +645,7 @@ pub const GameState = struct {
     assets: Assets,
     mode: Mode = .play,
     player: Player,
+    druga: Druga,
     enemies: std.ArrayList(Enemy),
     xp_orbs: std.ArrayList(ExperienceOrb),
     upgrade_selection_menu: UpgradeSelectionMenu,
@@ -636,6 +655,7 @@ pub const GameState = struct {
     debug_info: DebugInfo = .{},
     waves: u32 = 0,
     spawn_timer: f64 = 0,
+    boss_spawned: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) GameState {
         const assets = Assets.init();
@@ -646,6 +666,7 @@ pub const GameState = struct {
             .allocator = allocator,
             .assets = assets,
             .player = player,
+            .druga = Druga.init(allocator, map_level.druga_spawn_point),
             .enemies = std.ArrayList(Enemy).init(allocator),
             .xp_orbs = std.ArrayList(ExperienceOrb).init(allocator),
             .upgrade_selection_menu = UpgradeSelectionMenu.init(),
@@ -672,7 +693,6 @@ pub const GameState = struct {
     }
 
     pub fn spawnExperienceOrb(self: *GameState, enemy: *Enemy) void {
-        std.debug.print("spawnExperienceOrb\n", .{});
         self.xp_orbs.append(ExperienceOrb.init(self.allocator, enemy.center())) catch unreachable;
     }
 
@@ -746,6 +766,7 @@ pub const GameState = struct {
             }
         }
 
+        self.druga.update(self);
         self.player.update(self);
 
         if (self.player.canLevelUp()) {
@@ -755,16 +776,18 @@ pub const GameState = struct {
 
         const distanceTravelled = self.player.center().distance(self.map_level.player_spawn_point);
         self.spawn_timer += rl.getFrameTime();
-        if (@as(u32, @intFromFloat(@divFloor(distanceTravelled, WAVE_PER_DISTANCE))) > self.waves or self.spawn_timer > 3) {
+        const waveNum = @as(u32, @intFromFloat(@divFloor(distanceTravelled, WAVE_PER_DISTANCE)));
+        if ((waveNum > self.waves or self.spawn_timer > 3) and !self.boss_spawned) {
             self.spawn_timer = std.math.clamp(self.spawn_timer - 3, 0, 3);
-            self.waves += 1;
+            self.waves = if (waveNum > self.waves) waveNum else self.waves;
 
             const spawn_points = self.getSpawnPoints();
             for (spawn_points) |spawn_point| {
                 self.enemies.append(Enemy.init(self.allocator, spawn_point, stats.bat)) catch unreachable;
             }
 
-            if (self.waves > 1) {
+            if (self.waves > 20 and !self.boss_spawned) {
+                self.boss_spawned = true;
                 self.enemies.append(Enemy.init(self.allocator, spawn_points[@divFloor(SPAWN_POINTS, 2)], stats.boss)) catch unreachable;
             }
         }
@@ -819,6 +842,7 @@ pub const GameState = struct {
         for (self.enemies.items) |*enemy| {
             enemy.draw(self);
         }
+        self.druga.draw(self);
         self.player.draw(self);
         self.map_level.draw(self, 1);
         for (self.xp_orbs.items) |*orb| {

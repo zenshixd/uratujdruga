@@ -252,7 +252,7 @@ pub const AttackLine = struct {
     }
 
     pub fn draw(self: *AttackLine) void {
-        rl.drawLineEx(self.start, self.endPos(), 2, rl.Color.black);
+        rl.drawLineEx(self.start, self.endPos(), 2, rl.Color.red);
     }
 };
 
@@ -497,7 +497,7 @@ pub const Attack = struct {
     pub fn cooldown(self: Attack) f64 {
         return switch (self.kind) {
             .none => 0,
-            .hammer_smash => stats.hammer.attack_cooldown,
+            .hammer_smash => self.hammerAttackCooldown(),
             .word_of_radiance => stats.word_of_radiance.attack_cooldown,
             .sacred_flame => stats.sacred_flame.attack_cooldown,
             .triple_ball_attack,
@@ -545,7 +545,13 @@ pub const Attack = struct {
             .hammer_smash => {
                 const attack_line = owner.attack_line orelse return;
                 if (self.duration_timer > 0) {
-                    state.assets.getTexture(.hammur).drawEx(attack_line.start, attack_line.rotation, 0.1, rl.Color.white);
+                    //const scale: f32 = if (self.upgrades.contains(.hammer_smash_more_aoe2)) 0.2 else if (self.upgrades.contains(.hammer_smash_more_aoe1)) 0.15 else 0.08;
+                    const tex = state.assets.getTexture(.hammur);
+                    //state.assets.getTexture(.hammur).drawEx(attack_line.start, attack_line.rotation, scale, rl.Color.white);
+
+                    const sourcRec = rl.Rectangle.init(0, 0, @floatFromInt(tex.width), @floatFromInt(tex.height));
+                    const destRec = rl.Rectangle.init(attack_line.start.x, attack_line.start.y, stats.hammer.size.x, self.hammerAttackLength());
+                    tex.drawPro(sourcRec, destRec, rl.Vector2.init(stats.hammer.size.x / 2, 0), attack_line.rotation, rl.Color.white);
                 }
             },
             .word_of_radiance => {
@@ -595,8 +601,18 @@ pub const Attack = struct {
     }
 
     pub fn hammerAttackActivate(self: *Attack, owner: *Entity) void {
-        owner.attack_line = AttackLine.init(self.allocator, owner.center(), stats.hammer.start_angle, stats.hammer.size.y);
+        owner.attack_line = AttackLine.init(self.allocator, owner.center(), stats.hammer.start_angle, self.hammerAttackLength());
         self.hammerAttackTick(owner);
+    }
+
+    pub fn hammerAttackLength(self: Attack) f32 {
+        if (self.upgrades.contains(.hammer_smash_more_aoe2)) {
+            return stats.hammer.size.y * 2;
+        } else if (self.upgrades.contains(.hammer_smash_more_aoe1)) {
+            return stats.hammer.size.y * 1.5;
+        } else {
+            return stats.hammer.size.y;
+        }
     }
 
     pub fn hammerAttackMaxRepeats(self: Attack) u8 {
@@ -606,6 +622,16 @@ pub const Attack = struct {
             return stats.hammer.max_repeats2;
         } else {
             return stats.hammer.max_repeats;
+        }
+    }
+
+    pub fn hammerAttackCooldown(self: Attack) f64 {
+        if (self.upgrades.contains(.hammer_smash_less_cd2)) {
+            return stats.hammer.attack_cooldown - 1;
+        } else if (self.upgrades.contains(.hammer_smash_less_cd1)) {
+            return stats.hammer.attack_cooldown - 0.5;
+        } else {
+            return stats.hammer.attack_cooldown;
         }
     }
 

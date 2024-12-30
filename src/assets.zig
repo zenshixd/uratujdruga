@@ -23,6 +23,7 @@ pub const TextureKind = enum {
 
     hammur,
     ash,
+    druga,
     monsters1,
     bat_monster,
     mimic,
@@ -61,6 +62,7 @@ pub fn init() Assets {
 
     self.textureAssets.put(.hammur, rl.loadTexture("assets/hammur2.png"));
     self.textureAssets.put(.ash, rl.loadTexture("assets/sprites/ash_sprite_3.png"));
+    self.textureAssets.put(.druga, rl.loadTexture("assets/sprites/druga.png"));
     self.textureAssets.put(.bat_monster, rl.loadTexture("assets/sprites/bat.png"));
     self.textureAssets.put(.mimic, rl.loadTexture("assets/sprites/mimic.png"));
 

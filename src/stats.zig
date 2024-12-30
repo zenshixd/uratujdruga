@@ -10,7 +10,7 @@ pub const screen_height = 600;
 pub const tile_size = 32;
 pub const sprite_size = 16;
 
-pub const experience_for_next_level = 30;
+pub const experience_for_next_level = 20;
 pub const pickup_range = 500;
 pub const projectile_speed = 200;
 pub const knockback_distance = 300;
@@ -50,8 +50,22 @@ pub const player = EntityStats{
     },
 };
 
+pub const druga = EntityStats{
+    .max_health = 50,
+    .max_speed = 0,
+    .acceleration = 0,
+    .size = .{ .x = 32, .y = 48 },
+    .texture = .{
+        .asset = .druga,
+        .x = 0,
+        .y = 0,
+        .width = 177,
+        .height = 201,
+    },
+};
+
 pub const bat = EntityStats{
-    .max_health = 3,
+    .max_health = 2,
     .max_speed = 110,
     .acceleration = 50,
     .size = .{ .x = 24, .y = 24 },
@@ -95,11 +109,11 @@ pub const experience_orb = EntityStats{
 };
 
 pub const hammer = .{
-    .size = .{ .x = 10, .y = 200 },
+    .size = .{ .x = 50, .y = 200 },
     .head_radius = 30,
     .start_angle = 220,
     .swing_angle = 100,
-    .attack_cooldown = 1,
+    .attack_cooldown = 3,
     .attack_duration = 0.4,
     .max_repeats = 1,
     .max_repeats2 = 2,
