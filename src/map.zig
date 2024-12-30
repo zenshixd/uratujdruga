@@ -39,6 +39,7 @@ pub const Tile = struct {
     tileset: Tileset = .catacombs,
     offset: rl.Vector2 = rl.Vector2.init(0, 0),
     is_solid: bool = true,
+    layer: u8 = 0,
 
     pub fn rect(self: Tile) rl.Rectangle {
         return rl.Rectangle.init(
@@ -50,8 +51,12 @@ pub const Tile = struct {
     }
 
     pub fn draw(self: Tile, state: *GameState) void {
+        self.drawExtra(state, 1);
+    }
+
+    pub fn drawExtra(self: Tile, state: *GameState, opacity: f32) void {
         const texture = self.tileset.getTexture(state.assets);
-        texture.drawPro(Tileset.sourceRect(self.offset), self.rect(), rl.Vector2.zero(), 0, rl.Color.white);
+        texture.drawPro(Tileset.sourceRect(self.offset), self.rect(), rl.Vector2.zero(), 0, rl.Color.white.fade(opacity));
     }
 
     pub fn toTilePos(pos: rl.Vector2) rl.Vector2 {
@@ -66,7 +71,7 @@ pub const MapEditor = struct {
     toolbox: Toolbox,
     tiles: std.ArrayList(Tile),
     player_spawn_point: rl.Vector2,
-    enemy_spawn_point: rl.Vector2,
+    druga_spawn_point: rl.Vector2,
     boundary: rl.Rectangle,
 
     pub fn init(allocator: std.mem.Allocator, map_level: *const MapLevel) MapEditor {
@@ -76,7 +81,7 @@ pub const MapEditor = struct {
         return MapEditor{
             .tiles = tiles,
             .player_spawn_point = map_level.player_spawn_point,
-            .enemy_spawn_point = map_level.enemy_spawn_point,
+            .druga_spawn_point = map_level.druga_spawn_point,
             .boundary = map_level.boundary,
             .toolbox = Toolbox.init(allocator),
         };
@@ -87,15 +92,20 @@ pub const MapEditor = struct {
     }
 
     pub fn draw(self: *MapEditor, state: *GameState) void {
+        const display_layer = self.toolbox.display_layer;
         for (self.tiles.items) |tile| {
-            tile.draw(state);
+            //if (tile.layer > display_layer) {
+            //    continue;
+            //}
+
+            const opacity: f32 = if (tile.layer == display_layer) 1 else 0.5;
+            tile.drawExtra(state, opacity);
             if (tile.is_solid) {
                 rl.drawRectangleRec(tile.rect(), rl.Color.red.fade(0.3));
             }
         }
 
         rl.drawCircleV(self.player_spawn_point.addValue(stats.tile_size / 2), 10, rl.Color.lime);
-        rl.drawCircleV(self.enemy_spawn_point.addValue(stats.tile_size / 2), 10, rl.Color.red.brightness(-0.2));
         rl.drawRectangleLinesEx(self.boundary, 3, rl.Color.blue);
         self.toolbox.draw(state);
     }
@@ -105,7 +115,6 @@ pub const MapEditor = struct {
             .tiles = self.tiles.items,
             .boundary = self.boundary,
             .player_spawn_point = self.player_spawn_point,
-            .enemy_spawn_point = self.enemy_spawn_point,
         };
     }
 
@@ -119,7 +128,6 @@ pub const MapEditor = struct {
             .tiles = self.tiles.items,
             .boundary = self.boundary,
             .player_spawn_point = self.player_spawn_point,
-            .enemy_spawn_point = self.enemy_spawn_point,
         }, .{ .whitespace = .indent_2 }, writer);
     }
 };
@@ -132,7 +140,7 @@ pub const MapLevel = struct {
         Tile{ .position = rl.Vector2.init(3, 3) },
     },
     player_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
-    enemy_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
+    druga_spawn_point: rl.Vector2 = rl.Vector2.init(0, 0),
     boundary: rl.Rectangle = rl.Rectangle.init(0, 0, 1000, 1000),
 
     pub fn load(allocator: std.mem.Allocator) !MapLevel {
@@ -156,9 +164,11 @@ pub const MapLevel = struct {
         return parsedMapLevel.value;
     }
 
-    pub fn draw(self: *MapLevel, state: *GameState) void {
+    pub fn draw(self: *MapLevel, state: *GameState, layer: u8) void {
         for (self.tiles) |tile| {
-            tile.draw(state);
+            if (tile.layer == layer) {
+                tile.draw(state);
+            }
         }
     }
 };

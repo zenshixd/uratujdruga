@@ -21,9 +21,11 @@ pub const TextureKind = enum {
     catacombs,
     catacombs_decor,
 
+    hammur,
     ash,
     monsters1,
     bat_monster,
+    mimic,
 
     pointer,
     erase,
@@ -57,8 +59,10 @@ pub fn init() Assets {
     self.textureAssets.put(.catacombs, rl.loadTexture("assets/catacombs/mainlevbuild.png"));
     self.textureAssets.put(.catacombs_decor, rl.loadTexture("assets/catacombs/decorative.png"));
 
+    self.textureAssets.put(.hammur, rl.loadTexture("assets/hammur2.png"));
     self.textureAssets.put(.ash, rl.loadTexture("assets/sprites/ash_sprite_3.png"));
     self.textureAssets.put(.bat_monster, rl.loadTexture("assets/sprites/bat.png"));
+    self.textureAssets.put(.mimic, rl.loadTexture("assets/sprites/mimic.png"));
 
     self.textureAssets.put(.pointer, rl.loadTexture("assets/icons/pointer_scifi_a.png"));
     self.textureAssets.put(.erase, rl.loadTexture("assets/icons/drawing_eraser.png"));

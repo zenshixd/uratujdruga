@@ -15,7 +15,7 @@ pub const Toolbox = struct {
         paint,
         make_solid,
         start_point,
-        enemy_point,
+        druga_spawn_point,
         move_boundary,
     };
 
@@ -26,6 +26,7 @@ pub const Toolbox = struct {
     display_tileset: bool = true,
     selection: std.AutoHashMap(usize, void),
     selected_point: enum { none, ne, nw, se, sw } = .none,
+    display_layer: u8 = 0,
 
     pub fn init(allocator: std.mem.Allocator) Toolbox {
         return Toolbox{
@@ -47,6 +48,11 @@ pub const Toolbox = struct {
             self.kind = nextEnumValue(Kind, self.kind);
         }
 
+        if (rl.isKeyPressed(rl.KeyboardKey.key_page_up)) {
+            self.display_layer = wrapValue(self.display_layer + 1, 0, 2);
+            std.debug.print("display layer: {d}\n", .{self.display_layer});
+        }
+
         self.pos = rl.getMousePosition();
 
         switch (self.kind) {
@@ -55,7 +61,7 @@ pub const Toolbox = struct {
             .paint => self.updatePaintTool(state),
             .make_solid => self.updateMakeSolidTool(state),
             .start_point => self.updateSpawnPointTool(&state.map_editor.player_spawn_point),
-            .enemy_point => self.updateSpawnPointTool(&state.map_editor.enemy_spawn_point),
+            .druga_spawn_point => self.updateSpawnPointTool(&state.map_editor.druga_spawn_point),
             .move_boundary => self.updateMoveBoundaryTool(state),
         }
     }
@@ -65,17 +71,17 @@ pub const Toolbox = struct {
             const mouse_pos = rl.getMousePosition();
             const tileVec = Tile.toTilePos(mouse_pos);
 
-            if (findTileIdx(&state.map_editor, tileVec)) |tile_idx| {
+            if (self.findTileIdx(&state.map_editor, tileVec)) |tile_idx| {
                 self.selection.put(tile_idx, {}) catch unreachable;
             }
         }
     }
-    pub fn updateEraseTool(_: *Toolbox, state: *GameState) void {
+    pub fn updateEraseTool(self: *Toolbox, state: *GameState) void {
         if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_left)) {
             const mouse_pos = rl.getMousePosition();
             const tileVec = Tile.toTilePos(mouse_pos);
 
-            if (findTileIdx(&state.map_editor, tileVec)) |tile_idx| {
+            if (self.findTileIdx(&state.map_editor, tileVec)) |tile_idx| {
                 _ = state.map_editor.tiles.orderedRemove(tile_idx);
             }
         }
@@ -86,11 +92,11 @@ pub const Toolbox = struct {
             const mouse_pos = rl.getMousePosition().add(rl.Vector2.init(stats.tile_size / 2, stats.tile_size / 2));
             const tileVec = Tile.toTilePos(mouse_pos);
 
-            if (findTileIdx(map_editor, tileVec)) |tile_idx| {
+            if (self.findTileIdx(map_editor, tileVec)) |tile_idx| {
                 map_editor.tiles.items[tile_idx].tileset = self.active_tileset;
                 map_editor.tiles.items[tile_idx].offset = self.active_tile;
             } else {
-                map_editor.tiles.append(Tile{ .position = tileVec, .offset = self.active_tile }) catch unreachable;
+                map_editor.tiles.append(Tile{ .position = tileVec, .offset = self.active_tile, .is_solid = false, .layer = self.display_layer }) catch unreachable;
             }
         }
 
@@ -137,12 +143,12 @@ pub const Toolbox = struct {
         }
     }
 
-    pub fn updateMakeSolidTool(_: *Toolbox, state: *GameState) void {
+    pub fn updateMakeSolidTool(self: *Toolbox, state: *GameState) void {
         if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_left)) {
             const mouse_pos = rl.getMousePosition();
             const tileVec = Tile.toTilePos(mouse_pos);
 
-            if (findTileIdx(&state.map_editor, tileVec)) |tile_idx| {
+            if (self.findTileIdx(&state.map_editor, tileVec)) |tile_idx| {
                 state.map_editor.tiles.items[tile_idx].is_solid = !rl.isKeyDown(rl.KeyboardKey.key_left_shift);
             }
         }
@@ -197,9 +203,9 @@ pub const Toolbox = struct {
         }
     }
 
-    pub fn findTileIdx(map_editor: *MapEditor, pos: rl.Vector2) ?usize {
+    pub fn findTileIdx(self: *Toolbox, map_editor: *MapEditor, pos: rl.Vector2) ?usize {
         for (map_editor.tiles.items, 0..) |tile, idx| {
-            if (tile.position.equals(pos) == 1) {
+            if (tile.position.equals(pos) == 1 and self.display_layer == tile.layer) {
                 return idx;
             }
         }
@@ -233,7 +239,6 @@ pub const Toolbox = struct {
         } else {
             const textureColor = switch (self.kind) {
                 .start_point => rl.Color.lime,
-                .enemy_point => rl.Color.red,
                 else => rl.Color.white,
             };
             rl.drawTextureV(self.getCursorIcon(state.assets), self.pos, textureColor);
@@ -246,7 +251,7 @@ pub const Toolbox = struct {
             .erase => assets.getTexture(.erase),
             .paint => assets.getTexture(.paint),
             .make_solid => assets.getTexture(.make_solid),
-            .start_point, .enemy_point => assets.getTexture(.spawn_point),
+            .start_point => assets.getTexture(.spawn_point),
             .move_boundary => assets.getTexture(.move_boundary),
         };
     }

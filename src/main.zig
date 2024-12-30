@@ -96,7 +96,7 @@ pub const Entity = struct {
         var isXColliding = false;
         var isYColliding = false;
         for (state.map_level.tiles) |tile| {
-            if (!tile.is_solid) {
+            if (!tile.is_solid or tile.layer != 0) {
                 continue;
             }
 
@@ -200,11 +200,12 @@ pub const ExperienceOrb = struct {
     }
 };
 
-const Enemy = struct {
+pub const Enemy = struct {
     allocator: std.mem.Allocator,
     entity: Entity,
     attack: Attack,
     upgrades: *std.EnumSet(AttackUpgrade),
+    dmg_timer: f64 = 0,
 
     pub fn init(allocator: std.mem.Allocator, spawn_point: rl.Vector2, entity_stats: EntityStats) Enemy {
         const upgrades = allocator.create(std.EnumSet(AttackUpgrade)) catch unreachable;
@@ -229,11 +230,16 @@ const Enemy = struct {
         return &self.entity.velocity;
     }
 
-    pub fn center(self: Enemy) rl.Vector2 {
+    pub fn center(self: *Enemy) rl.Vector2 {
         return self.entity.center();
     }
 
-    pub fn isAlive(self: Enemy) bool {
+    pub fn isOnScreen(self: *Enemy, state: *GameState) bool {
+        const screen_pos = rl.getWorldToScreen2D(self.center(), state.cam);
+        return rl.checkCollisionPointRec(screen_pos, rl.Rectangle.init(0, 0, @floatFromInt(rl.getScreenWidth()), @floatFromInt(rl.getScreenHeight())));
+    }
+
+    pub fn isAlive(self: *Enemy) bool {
         return self.entity.isAlive();
     }
 
@@ -241,7 +247,8 @@ const Enemy = struct {
         self.entity.health -= damage;
 
         const knockback_direction = rl.Vector2.init(self.rect().x - source.rect.x, self.rect().y - source.rect.y).normalize();
-        self.velocity().* = self.velocity().add(knockback_direction.scale(stats.knockback_distance));
+        const knockback_distance: f32 = if (self.entity.stats.resist_knockback) stats.knockback_distance else stats.knockback_distance * 2;
+        self.velocity().* = self.velocity().add(knockback_direction.scale(knockback_distance));
 
         if (!self.isAlive()) {
             state.spawnExperienceOrb(self);
@@ -249,8 +256,17 @@ const Enemy = struct {
     }
 
     pub fn update(self: *Enemy, state: *GameState) void {
-        self.entity.addVelocity(rl.Vector2.init(state.player.rect().x - self.rect().x, state.player.rect().y - self.rect().y).normalize().scale(self.entity.stats.acceleration));
+        const vel = rl.Vector2.init(state.player.rect().x - self.rect().x, state.player.rect().y - self.rect().y).normalize().scale(self.entity.stats.acceleration);
+        self.entity.addVelocity(vel);
         self.entity.update(state);
+
+        if (rl.checkCollisionRecs(self.rect().*, state.player.rect().*)) {
+            self.dmg_timer += rl.getFrameTime();
+            if (self.dmg_timer > 0.2) {
+                self.dmg_timer = 0;
+                state.player.dealDamage(state, 1);
+            }
+        }
 
         self.attack.update(&self.entity, state);
         for (self.entity.projectiles.slice(), 0..) |*projectile, i| {
@@ -269,7 +285,7 @@ const Enemy = struct {
     }
 
     pub fn draw(self: *Enemy, state: *GameState) void {
-        self.attack.draw(&self.entity);
+        self.attack.draw(&self.entity, state);
         self.entity.draw(state);
         self.entity.drawHealthBar();
     }
@@ -298,7 +314,7 @@ pub const Player = struct {
             .upgrades = upgrades,
         };
 
-        self.attacks.append(Attack.init(allocator, .word_of_radiance, self.upgrades)) catch unreachable;
+        self.attacks.append(Attack.init(allocator, stats.player.default_attack, self.upgrades)) catch unreachable;
 
         return self;
     }
@@ -321,11 +337,15 @@ pub const Player = struct {
 
     pub fn gainExperience(self: *Player, amount: u8) void {
         self.experience += amount;
+    }
 
-        if (self.experience >= stats.experience_for_next_level) {
-            self.level += 1;
-            self.experience = 0;
-        }
+    pub fn canLevelUp(self: Player) bool {
+        return self.experience >= stats.experience_for_next_level;
+    }
+
+    pub fn levelUp(self: *Player) void {
+        self.level += 1;
+        self.experience = 0;
     }
 
     pub fn addAttack(self: *Player, attack_kind: AttackKind) void {
@@ -398,7 +418,7 @@ pub const Player = struct {
         self.entity.draw(state);
 
         for (self.attacks.slice()) |*attack| {
-            attack.draw(&self.entity);
+            attack.draw(&self.entity, state);
         }
 
         for (self.entity.projectiles.slice()) |*projectile| {
@@ -600,6 +620,8 @@ pub const UpgradeSelectionMenu = struct {
 
 pub const GameState = struct {
     const Mode = enum { editor, play };
+    const SPAWN_POINTS = 6;
+    const WAVE_PER_DISTANCE = 100;
 
     allocator: std.mem.Allocator,
     assets: Assets,
@@ -612,7 +634,8 @@ pub const GameState = struct {
     map_level: MapLevel,
     map_editor: MapEditor,
     debug_info: DebugInfo = .{},
-    last_spawn_time: f64 = 0,
+    waves: u32 = 0,
+    spawn_timer: f64 = 0,
 
     pub fn init(allocator: std.mem.Allocator) GameState {
         const assets = Assets.init();
@@ -653,6 +676,18 @@ pub const GameState = struct {
         self.xp_orbs.append(ExperienceOrb.init(self.allocator, enemy.center())) catch unreachable;
     }
 
+    pub fn getSpawnPoints(self: *GameState) [SPAWN_POINTS]rl.Vector2 {
+        var spawn_points: [SPAWN_POINTS]rl.Vector2 = undefined;
+        var i: u8 = 0;
+        const y_step = @divExact(rl.getScreenHeight(), SPAWN_POINTS);
+        const world_pos = rl.getScreenToWorld2D(rl.Vector2.init(@floatFromInt(rl.getScreenWidth() + 50), 0), self.cam);
+        while (i < SPAWN_POINTS) : (i += 1) {
+            spawn_points[i] = world_pos.add(rl.Vector2.init(0, @floatFromInt(y_step * i)));
+        }
+
+        return spawn_points;
+    }
+
     pub fn tick(self: *GameState) void {
         if (rl.isKeyPressed(rl.KeyboardKey.key_f1)) {
             self.debug_info.enabled = !self.debug_info.enabled;
@@ -684,32 +719,54 @@ pub const GameState = struct {
             return;
         }
 
-        var i = self.xp_orbs.items.len;
-        while (i > 0) {
-            i -|= 1;
-            var orb = &self.xp_orbs.items[i];
+        for (self.xp_orbs.items) |*orb| {
             orb.update(self);
+        }
+
+        for (self.enemies.items) |*enemy| {
+            enemy.update(self);
+        }
+
+        var i: usize = 0;
+        while (i < self.xp_orbs.items.len) : (i += 1) {
+            var orb = &self.xp_orbs.items[i];
             if (orb.shouldDestroy()) {
                 _ = self.xp_orbs.orderedRemove(i);
+                i = 0;
             }
         }
 
-        i = self.enemies.items.len;
-        while (i > 0) {
-            i -|= 1;
+        i = 0;
+        while (i < self.enemies.items.len) : (i += 1) {
             var enemy = &self.enemies.items[i];
-            enemy.update(self);
             if (enemy.shouldDestroy()) {
                 const deleted_enemy = self.enemies.orderedRemove(i);
                 deleted_enemy.deinit();
+                i = 0;
             }
         }
 
         self.player.update(self);
 
-        if (rl.getTime() - self.last_spawn_time > 1) {
-            self.last_spawn_time = rl.getTime();
-            self.enemies.append(Enemy.init(self.allocator, self.map_level.enemy_spawn_point, stats.bat)) catch unreachable;
+        if (self.player.canLevelUp()) {
+            self.player.levelUp();
+            self.upgrade_selection_menu.showMenu(self);
+        }
+
+        const distanceTravelled = self.player.center().distance(self.map_level.player_spawn_point);
+        self.spawn_timer += rl.getFrameTime();
+        if (@as(u32, @intFromFloat(@divFloor(distanceTravelled, WAVE_PER_DISTANCE))) > self.waves or self.spawn_timer > 3) {
+            self.spawn_timer = std.math.clamp(self.spawn_timer - 3, 0, 3);
+            self.waves += 1;
+
+            const spawn_points = self.getSpawnPoints();
+            for (spawn_points) |spawn_point| {
+                self.enemies.append(Enemy.init(self.allocator, spawn_point, stats.bat)) catch unreachable;
+            }
+
+            if (self.waves > 1) {
+                self.enemies.append(Enemy.init(self.allocator, spawn_points[@divFloor(SPAWN_POINTS, 2)], stats.boss)) catch unreachable;
+            }
         }
 
         if (!self.player.isAlive() and rl.isKeyPressed(rl.KeyboardKey.key_r)) {
@@ -758,11 +815,12 @@ pub const GameState = struct {
     }
 
     pub fn drawPlayMode(self: *GameState) void {
-        self.map_level.draw(self);
+        self.map_level.draw(self, 0);
         for (self.enemies.items) |*enemy| {
             enemy.draw(self);
         }
         self.player.draw(self);
+        self.map_level.draw(self, 1);
         for (self.xp_orbs.items) |*orb| {
             orb.draw();
         }
@@ -783,7 +841,7 @@ pub const GameState = struct {
 };
 
 pub fn main() anyerror!void {
-    rl.initWindow(stats.screen_width, stats.screen_width, "Save the Druga");
+    rl.initWindow(stats.screen_width, stats.screen_width, "Na ratunek Drugiej!");
     rl.initAudioDevice();
     defer rl.closeWindow(); // Close window and OpenGL context
 

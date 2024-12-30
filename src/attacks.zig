@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const stats = @import("stats.zig");
 
 const GameState = @import("main.zig").GameState;
+const Enemy = @import("main.zig").Enemy;
 const Entity = @import("main.zig").Entity;
 
 pub const AttackKind = enum {
@@ -362,7 +363,7 @@ pub const WaveAttack = struct {
 
     pub fn draw(self: *WaveAttack) void {
         const radius = self.position.distance(self.origin);
-        rl.drawRing(self.origin, radius, radius + self.thickness, self.start_angle, self.end_angle, SEGMENTS, rl.Color.yellow);
+        rl.drawRing(self.origin, radius, radius + self.thickness, self.start_angle, self.end_angle, SEGMENTS, rl.Color.gold);
 
         //const points = self.genRingPoints();
         //for (0..points.len - 1) |i| {
@@ -416,6 +417,50 @@ pub const WaveAttack = struct {
         self.already_damaged.clearAndFree();
     }
 };
+
+pub const RayAttack = struct {
+    owner: *Entity,
+    targets: std.BoundedArray(usize, 10) = .{},
+    tick_timer: f64 = 0,
+    duration: f64,
+    repeats: u8 = 0,
+    max_repeats: u8,
+
+    pub fn update(self: *RayAttack, state: *GameState) void {
+        if (self.repeats >= self.max_repeats) {
+            return;
+        }
+
+        self.tick_timer += rl.getFrameTime();
+        if (self.tick_timer > self.duration) {
+            self.tick_timer -= self.duration;
+            self.repeats += 1;
+
+            for (self.targets.slice()) |enemy_idx| {
+                var enemy = &state.enemies.items[enemy_idx];
+                enemy.dealDamage(state, self.owner, 1);
+            }
+
+            var i = self.targets.len;
+            while (i > 0) {
+                i -|= 1;
+                const enemy_idx = self.targets.buffer[i];
+                var enemy = state.enemies.items[enemy_idx];
+                if (!enemy.isAlive()) {
+                    _ = self.targets.swapRemove(i);
+                }
+            }
+        }
+    }
+
+    pub fn draw(self: *RayAttack, state: *GameState) void {
+        for (self.targets.slice()) |enemy_idx| {
+            var enemy = state.enemies.items[enemy_idx];
+            rl.drawLineEx(enemy.center().add(rl.Vector2.init(0, -9999)), enemy.center(), 4, rl.Color.gold);
+        }
+    }
+};
+
 pub const Attack = struct {
     allocator: std.mem.Allocator,
     kind: AttackKind,
@@ -426,6 +471,7 @@ pub const Attack = struct {
     repeat_count: u8 = 0,
 
     wave: ?WaveAttack = null,
+    ray: ?RayAttack = null,
 
     pub fn init(allocator: std.mem.Allocator, kind: AttackKind, upgrades: *std.EnumSet(AttackUpgrade)) Attack {
         return Attack{
@@ -439,8 +485,8 @@ pub const Attack = struct {
         return switch (self.kind) {
             .none => 0,
             .hammer_smash => stats.hammer.attack_duration,
-            .sacred_flame => stats.sacred_flame.attack_duration,
             .word_of_radiance => stats.word_of_radiance.attack_duration,
+            .sacred_flame => stats.sacred_flame.attack_duration * stats.sacred_flame.max_repeats,
             .triple_ball_attack,
             .circle_ball_attack,
             => 0,
@@ -452,8 +498,8 @@ pub const Attack = struct {
         return switch (self.kind) {
             .none => 0,
             .hammer_smash => stats.hammer.attack_cooldown,
-            .sacred_flame => stats.sacred_flame.attack_cooldown,
             .word_of_radiance => stats.word_of_radiance.attack_cooldown,
+            .sacred_flame => stats.sacred_flame.attack_cooldown,
             .triple_ball_attack,
             .circle_ball_attack,
             => stats.simple_ball_attack.attack_cooldown,
@@ -489,17 +535,17 @@ pub const Attack = struct {
             self.cooldown_timer -= self.cooldown() + self.duration();
             self.duration_timer = self.duration();
             self.repeat_count = 1;
-            self.activate(owner);
+            self.activate(owner, state);
         }
     }
 
-    pub fn draw(self: *Attack, owner: *Entity) void {
+    pub fn draw(self: *Attack, owner: *Entity, state: *GameState) void {
         switch (self.kind) {
             .none => {},
             .hammer_smash => {
-                var attack_line = owner.attack_line orelse return;
+                const attack_line = owner.attack_line orelse return;
                 if (self.duration_timer > 0) {
-                    attack_line.draw();
+                    state.assets.getTexture(.hammur).drawEx(attack_line.start, attack_line.rotation, 0.1, rl.Color.white);
                 }
             },
             .word_of_radiance => {
@@ -507,7 +553,11 @@ pub const Attack = struct {
                     wave.draw();
                 }
             },
-            .sacred_flame => {},
+            .sacred_flame => {
+                if (self.ray) |*ray| {
+                    ray.draw(state);
+                }
+            },
             .triple_ball_attack,
             .circle_ball_attack,
             .spiral_ball_attack,
@@ -519,12 +569,12 @@ pub const Attack = struct {
         }
     }
 
-    pub fn activate(self: *Attack, owner: *Entity) void {
+    pub fn activate(self: *Attack, owner: *Entity, state: *GameState) void {
         switch (self.kind) {
             .none => unreachable,
             .hammer_smash => self.hammerAttackActivate(owner),
             .word_of_radiance => self.wordOfRadianceActivate(owner),
-            .sacred_flame => self.sacredFlameActivate(owner),
+            .sacred_flame => self.sacredFlameActivate(owner, state),
             .triple_ball_attack => self.tripleBallAttack(owner),
             .circle_ball_attack => self.simpleBallAttack(owner),
             .spiral_ball_attack => {},
@@ -640,9 +690,61 @@ pub const Attack = struct {
         }
     }
 
-    pub fn sacredFlameActivate(_: *Attack, _: *Entity) void {}
+    pub fn sacredFlameActivate(self: *Attack, owner: *Entity, state: *GameState) void {
+        var prng = std.Random.DefaultPrng.init(@intFromFloat(rl.getTime()));
+        var targetsCount = self.sacredFlameTargets();
+        if (state.enemies.items.len < targetsCount) {
+            targetsCount = @intCast(state.enemies.items.len);
+        }
+        var targets = std.BoundedArray(usize, 10){};
+        var tries: u8 = 10;
+        while (targets.len < targetsCount and tries > 0) {
+            const target = prng.random().uintLessThan(usize, state.enemies.items.len);
+            const enemy = &state.enemies.items[target];
+            if (std.mem.indexOfScalar(usize, targets.slice(), target) != null or !enemy.isOnScreen(state)) {
+                tries -= 1;
+                continue;
+            }
+            targets.append(target) catch unreachable;
+        }
 
-    pub fn sacredFlameTick(_: *Attack, _: *GameState) void {}
+        self.ray = RayAttack{
+            .owner = owner,
+            .targets = targets,
+            .duration = stats.sacred_flame.attack_duration,
+            .max_repeats = self.maxRepeats(),
+        };
+    }
+
+    pub fn sacredFlameTick(self: *Attack, state: *GameState) void {
+        if (self.ray) |*ray| {
+            ray.update(state);
+
+            if (ray.repeats >= ray.max_repeats) {
+                self.ray = null;
+            }
+        }
+    }
+
+    pub fn sacredFlameTargets(self: Attack) u8 {
+        if (self.upgrades.contains(.sacred_flame_more_targets2)) {
+            return stats.sacred_flame.max_targets * 3;
+        } else if (self.upgrades.contains(.sacred_flame_more_targets1)) {
+            return stats.sacred_flame.max_targets * 2;
+        } else {
+            return stats.sacred_flame.max_targets;
+        }
+    }
+
+    pub fn sacredFlameCooldown(self: Attack) u8 {
+        if (self.upgrades.contains(.sacred_flame_less_cd2)) {
+            return stats.sacred_flame.attack_cooldown / 3;
+        } else if (self.upgrades.contains(.sacred_flame_less_cd1)) {
+            return stats.sacred_flame.attack_cooldown / 2;
+        } else {
+            return stats.sacred_flame.attack_cooldown;
+        }
+    }
 
     pub fn tripleBallAttack(_: *Attack, owner: *Entity) void {
         const ANGLES = [_]f32{ -30, 0, 30 };
@@ -666,7 +768,8 @@ pub const Attack = struct {
             self.next_attack_time -= stats.spiral_ball_attack.frequency;
             const ratio = self.duration_timer / stats.spiral_ball_attack.duration;
             const angle = std.math.degreesToRadians(stats.spiral_ball_attack.starting_angle + stats.spiral_ball_attack.spiral_angle * ratio);
-            owner.spawnProjectile(10, rl.Vector2.zero().rotate(@floatCast(angle)).scale(stats.projectile_speed));
+            //const direction = rl.Vector2.init(state.player.rect().x - owner.rect().x, state.player.rect().y - owner.rect().y).normalize();
+            owner.spawnProjectile(10, rl.Vector2.init(-1, 0).rotate(@floatCast(angle)).scale(stats.projectile_speed));
         }
     }
 };
